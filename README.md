@@ -97,7 +97,7 @@ OpenCode 2 uses plural `plugins` and `providers` keys. Register the package in `
 }
 ```
 
-The adapter has no TUI registration; it uses OpenCode 2's native provider UI.
+The adapter also ships a native TUI plugin (registered through the package's `./tui` entry and its `["server", "tui"]` `oc-plugin` manifest): a prompt-footer pool summary, per-account status in the sidebar footer, toast notifications for pool changes, and an accounts dialog bound to `ctrl+g` to inspect and enable/disable accounts. Solid/OpenTUI runtimes are resolved from the host's embedded copies (optional peers), so no extra install is required.
 
 ### OpenCode from this checkout (contributors)
 
@@ -110,7 +110,16 @@ bun run --cwd packages/opencode smoke:tui    # smoke-test the bundled TUI
 bun run smoke:opencode-v2                    # smoke-test packed OpenCode 2 resolution
 ```
 
-Then point `OPENCODE_CONFIG_DIR` at a project that has the development plugin entry, or copy `dist/` and `dist/src/tui-compiled/` into a directory OpenCode watches.
+Then point OpenCode 2 at the working-tree package itself instead of the npm name, either by putting the local path in `plugins` or by using `OPENCODE_CONFIG_DIR`:
+
+```jsonc
+// opencode.json
+{
+  "plugins": ["/path/to/antigravity-auth/packages/opencode-v2"]
+}
+```
+
+The `plugins` entry accepts the package name (`@cortexkit/opencode-v2-antigravity-auth`) once published, or an absolute local path for development installs.
 
 ### Pi
 
