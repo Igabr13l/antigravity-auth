@@ -43,6 +43,20 @@ code exchange.
   arrives within 10 minutes
 - **THEN** the callback promise rejects with the corresponding error
 
+#### Scenario: A retry while a previous attempt is still pending
+
+- **WHEN** a new login attempt starts while a previous callback listener is
+  still holding the fixed redirect port
+- **THEN** the previous listener is closed (its pending promise rejects as
+  superseded) and the new attempt binds the port, instead of failing with
+  `EADDRINUSE`
+
+#### Scenario: Another process holds the redirect port
+
+- **WHEN** the callback port is occupied by an unrelated process
+- **THEN** the listener rejects with an error naming the port and the conflict,
+  rather than a bare bind failure
+
 ### Requirement: Account persistence on login
 
 After a successful exchange the plugin SHALL append or re-enable the account

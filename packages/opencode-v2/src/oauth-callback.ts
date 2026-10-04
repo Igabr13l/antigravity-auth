@@ -15,6 +15,15 @@ interface AntigravityCodeOptions {
   timeoutMs?: number
 }
 
+/**
+ * The single callback listener currently waiting for Google's redirect. Kept at
+ * module scope so a new login attempt can close a previous one before binding
+ * the fixed redirect port.
+ */
+let activeListener:
+  | { finish: (code?: string, error?: unknown) => void }
+  | undefined
+
 // The callback page only acknowledges that the authorization code arrived; the
 // token exchange and account persistence happen afterwards in the plugin, so the
 // page must not claim the account was added.
@@ -43,6 +52,16 @@ export function waitForAntigravityCode(
   if (!expectedState) throw new Error('OAuth state is empty')
   const port = options.port ?? CALLBACK_PORT
   const timeoutMs = options.timeoutMs ?? CALLBACK_TIMEOUT_MS
+
+  // The redirect port is fixed, so a retry after a hung attempt (the browser
+  // never came back, or the user aborted without cancelling) would otherwise
+  // fail to bind while the old listener is still open. Supersede it: closing
+  // the previous listener rejects its pending promise, and the new attempt owns
+  // the port. Mirrors the OpenCode 1 adapter's close-before-relisten behavior.
+  activeListener?.finish(
+    undefined,
+    new Error('Antigravity login superseded by a new attempt'),
+  )
 
   return new Promise<string>((resolve, reject) => {
     let settled = false
@@ -87,6 +106,7 @@ export function waitForAntigravityCode(
       if (settled) return
       settled = true
       if (timer) clearTimeout(timer)
+      if (activeListener?.finish === finish) activeListener = undefined
       server.close(() => {})
       if (error) {
         reject(error)
@@ -99,8 +119,23 @@ export function waitForAntigravityCode(
       resolve(code)
     }
 
-    server.once('error', (error) => finish(undefined, error))
+    activeListener = { finish }
+
+    server.once('error', (error) => {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code === 'EADDRINUSE') {
+        finish(
+          undefined,
+          new Error(
+            `Antigravity OAuth callback port ${port} is already in use by another process. Close the process holding it and retry.`,
+          ),
+        )
+        return
+      }
+      finish(undefined, error)
+    })
     server.listen(port, CALLBACK_HOST, () => {
+      if (settled) return
       timer = setTimeout(
         () =>
           finish(undefined, new Error('Antigravity authorization timed out')),
