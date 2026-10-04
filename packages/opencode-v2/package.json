@@ -52,7 +52,8 @@
     "format:check": "biome format src test scripts example README.md README.zh-CN.md",
     "typecheck": "tsc --noEmit",
     "test": "bun run --cwd ../core build && bun run build && cd ../.. && bun test --isolate packages/opencode-v2/test",
-    "smoke:pack": "bun run build && bun scripts/smoke-pack-install.ts"
+    "smoke:pack": "bun run build && bun scripts/smoke-pack-install.ts",
+    "install:local": "bun run build && bun scripts/install-local.ts"
   },
   "dependencies": {
     "@cortexkit/antigravity-auth-core": "2.2.1"

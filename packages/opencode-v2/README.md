@@ -64,9 +64,18 @@ npm install @cortexkit/opencode-v2-antigravity-auth
 bun install
 ```
 
-Register the package and the Antigravity-backed Google models in `opencode.json`.
-Use the package name for an npm installation, or the absolute package directory
-(`/path/to/antigravity-auth/packages/opencode-v2`) for a local checkout.
+### Local development install
+
+`bun run --cwd packages/opencode-v2 install:local` builds the adapter and copies
+its entrypoints into `<config>/plugins/antigravity-auth/` (`index.ts` server,
+`tui.ts` TUI, plus the helper modules). OpenCode 2 discovers that directory, so
+both the server and TUI halves load without an `opencode.json` or `cli.json`
+entry. Re-run it after every rebuild and restart OpenCode (or let the plugin
+watcher reload). Set `OPENCODE_CONFIG_DIR` to target another config directory.
+
+Register the package and the Antigravity-backed Google models in `opencode.json`:
+use the package name for an npm installation, or install the working-tree build
+as a discovered local plugin (see below) and leave `plugins` empty.
 The complete model catalog is in [`example/opencode.json`](example/opencode.json).
 
 ```jsonc

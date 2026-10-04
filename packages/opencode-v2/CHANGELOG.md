@@ -7,6 +7,7 @@
 - Added a native OpenCode 2 TUI plugin (`./tui` entry): prompt-footer pool summary, sidebar footer per-account status, toast notifications for pool changes (ineligibility, validation, cooldowns, enable/disable), and an accounts dialog bound to `ctrl+g` to inspect and toggle accounts. Verified against host beta-19271: footer summary renders reactively, the dialog lists masked accounts, and selection persists through the lock-held pool mutation. Accounts are displayed by masked email only; Solid/OpenTUI runtimes are resolved from the host's embedded copies (optional peers).
 - Changed the `oc-plugin` manifest to `["server", "tui"]`.
 - Added OpenSpec capability specs under `openspec/specs/` covering packaging, request bridging, envelope invariants, account rotation, OAuth, TUI status, and e2e verification.
+- Added `install:local` (and `scripts/install-local.ts`) to install the working-tree build as a discovered OpenCode 2 plugin under `<config>/plugins/antigravity-auth/`, so a local checkout needs no npm publish and no `opencode.json`/`cli.json` entry.
 - Added a drift-guard test asserting `example/opencode.json` declares exactly the models the bridge routes.
 
 ### Changed

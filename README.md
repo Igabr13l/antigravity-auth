@@ -101,25 +101,33 @@ The adapter also ships a native TUI plugin (registered through the package's `./
 
 ### OpenCode from this checkout (contributors)
 
-Link the package into your local OpenCode config so the working-tree version is used:
+Build the workspace, then install the OpenCode 2 adapter as a local plugin:
 
 ```bash
 bun install                                  # at repo root
 bun run build                                # build all four published packages
+bun run --cwd packages/opencode-v2 install:local   # copy the adapter into the config
 bun run --cwd packages/opencode smoke:tui    # smoke-test the bundled TUI
 bun run smoke:opencode-v2                    # smoke-test packed OpenCode 2 resolution
 ```
 
-Then point OpenCode 2 at the working-tree package itself instead of the npm name, either by putting the local path in `plugins` or by using `OPENCODE_CONFIG_DIR`:
+`install:local` (re)builds the adapter and copies its entrypoints into
+`<config>/plugins/antigravity-auth/` (`index.ts` for the server, `tui.ts` for
+the TUI) plus the helper modules they import. OpenCode 2 discovers that
+directory automatically, so no `opencode.json` or `cli.json` entry is needed.
+Set `OPENCODE_CONFIG_DIR` to install into a non-default config directory.
+Re-run the command after every rebuild; restart OpenCode (or let the plugin
+watcher reload) to pick up the new build.
+
+Once the package is published to npm, the installation path in `opencode.json`
+becomes the package name instead:
 
 ```jsonc
 // opencode.json
 {
-  "plugins": ["/path/to/antigravity-auth/packages/opencode-v2"]
+  "plugins": ["@cortexkit/opencode-v2-antigravity-auth"]
 }
 ```
-
-The `plugins` entry accepts the package name (`@cortexkit/opencode-v2-antigravity-auth`) once published, or an absolute local path for development installs.
 
 ### Pi
 
