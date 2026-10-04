@@ -29,9 +29,13 @@ import type { Plugin as TuiPlugin } from '@opencode-ai/plugin/tui'
 import { accountsFilePath } from './paths.ts'
 import {
   type AccountPoolStatus,
+  accountKey,
   diffAccountPoolStatus,
+  displayAccountId,
   formatAccountLine,
   formatPoolSummaryLine,
+  isAccountBlocked,
+  isStableAccountKey,
   type PoolChange,
   summarizeAccountPool,
 } from './pool-status.ts'
@@ -99,7 +103,8 @@ export function createOpenCodeV2AntigravityTui(
       )
       let previous: AccountPoolStatus | undefined
       let keymapBound = false
-      let refreshing = false
+      let refreshChain: Promise<void> = Promise.resolve()
+      let disposed = false
 
       const showToast = (
         message: string,
@@ -128,26 +133,49 @@ export function createOpenCodeV2AntigravityTui(
         )
       }
 
-      const refresh = async (): Promise<void> => {
-        if (refreshing) return
-        refreshing = true
-        try {
-          const storage = await dependencies.loadPool()
-          const next = storage
-            ? summarizeAccountPool(storage, dependencies.now())
-            : undefined
-          announce(diffAccountPoolStatus(previous, next ?? emptyStatus()))
-          previous = next ?? undefined
-          mutateState((draft) => {
-            draft.status = next
-          })
-        } catch {
+      const readOnce = async (): Promise<void> => {
+        const storage = await dependencies.loadPool()
+        if (disposed) return
+        if (!storage) {
+          // Unreadable right now. Keep the last good baseline so the next
+          // successful read can report what changed during the gap, and render
+          // unavailability rather than an empty snapshot.
           mutateState((draft) => {
             draft.status = undefined
           })
-        } finally {
-          refreshing = false
+          return
         }
+        const next = summarizeAccountPool(storage, dependencies.now())
+        announce(diffAccountPoolStatus(previous, next))
+        previous = next
+        mutateState((draft) => {
+          draft.status = next
+        })
+      }
+
+      /**
+       * Read the pool, serialising every caller behind the previous read so a
+       * slow read can never race a newer one. Each caller still triggers a
+       * fresh read after all prior reads, so a caller that mutates and then
+       * refreshes never publishes a snapshot older than its own write. The
+       * reads are cheap (a local, lock-held pool file), so chaining them is
+       * safe; we deliberately do not coalesce away a caller's own read.
+       */
+      const refresh = (): Promise<void> => {
+        const run = refreshChain.then(async () => {
+          try {
+            await readOnce()
+          } catch {
+            // A read that throws is treated like an unreadable pool: publish
+            // unavailability and keep the last good baseline for recovery.
+            if (disposed) return
+            mutateState((draft) => {
+              draft.status = undefined
+            })
+          }
+        })
+        refreshChain = run.catch(() => {})
+        return run
       }
 
       const openAccountsDialog = async (): Promise<void> => {
@@ -157,23 +185,100 @@ export function createOpenCodeV2AntigravityTui(
           return
         }
         try {
-          const selected = await ctx.ui.dialog.select<number>({
+          const selected = await ctx.ui.dialog.select<string>({
             title: 'Antigravity accounts',
             options: current.accounts.map((account) => ({
               title: formatAccountLine(account, dependencies.now()),
-              value: account.index,
+              value: account.key,
             })),
           })
           if (selected === undefined) return
-          await dependencies.mutatePool((pool) => ({
-            ...pool,
-            accounts: pool.accounts.map((account, index) =>
-              index === selected
-                ? { ...account, enabled: account.enabled === false }
-                : account,
-            ),
-          }))
-          await refresh()
+          const target = current.accounts.find(
+            (account) => account.key === selected,
+          )
+          if (!target) return
+          // An index-derived key identifies its account only by position, so
+          // we cannot use it to write safely: after a concurrent add or remove
+          // the same key may now name a different account. Fail closed rather
+          // than editing the wrong record.
+          if (!isStableAccountKey(selected)) {
+            showToast(
+              'This account has no address on file, so its identity can shift. Add the account email before toggling it from the TUI.',
+              'warning',
+            )
+            return
+          }
+          const snapshotState = target.state
+          if (
+            snapshotState === 'ineligible' ||
+            snapshotState === 'verification'
+          ) {
+            showToast(
+              snapshotState === 'ineligible'
+                ? `${displayAccountId(target)} is blocked by Google (ACCOUNT_INELIGIBLE); resolve it before re-enabling`
+                : `${displayAccountId(target)} needs Google account validation; complete it before re-enabling`,
+              'warning',
+            )
+            return
+          }
+          let outcome: 'ok' | 'missing' | 'ambiguous' | 'blocked' = 'missing'
+          await dependencies.mutatePool((pool) => {
+            const matches: number[] = []
+            pool.accounts.forEach((account, index) => {
+              if (accountKey(account, index) === selected) matches.push(index)
+            })
+            if (matches.length === 0) {
+              outcome = 'missing'
+              return undefined
+            }
+            if (matches.length > 1) {
+              // Two accounts normalise to the same address key; toggling by
+              // key would edit both. Leave the pool untouched instead.
+              outcome = 'ambiguous'
+              return undefined
+            }
+            const account = pool.accounts[matches[0]!]!
+            // Re-check the block on the *fresh* record inside the lock: a
+            // block can land between the dialog opening and this write.
+            if (isAccountBlocked(account)) {
+              outcome = 'blocked'
+              return undefined
+            }
+            outcome = 'ok'
+            return {
+              ...pool,
+              accounts: pool.accounts.map((candidate, index) =>
+                index === matches[0]
+                  ? { ...candidate, enabled: candidate.enabled === false }
+                  : candidate,
+              ),
+            }
+          })
+          const finalOutcome = outcome as
+            | 'ok'
+            | 'missing'
+            | 'ambiguous'
+            | 'blocked'
+          if (finalOutcome === 'ok') {
+            await refresh()
+            return
+          }
+          if (finalOutcome === 'missing') {
+            showToast(
+              'Account pool changed while the dialog was open; reopen it to retry',
+              'warning',
+            )
+          } else if (finalOutcome === 'ambiguous') {
+            showToast(
+              'Multiple pool entries share this address; leaving the pool untouched',
+              'warning',
+            )
+          } else {
+            showToast(
+              'This account is now blocked by Google; resolve it before re-enabling',
+              'warning',
+            )
+          }
         } catch {
           // Dialog failures are non-fatal; the pool stays untouched.
         }
@@ -230,6 +335,11 @@ export function createOpenCodeV2AntigravityTui(
           ctx.ui.slot({
             append: 'sidebar.footer',
             render: () => {
+              // Both slots retry the bind: the layer needs a component scope,
+              // so whichever surface the host mounts first wins. Binding from
+              // one slot only would leave ctrl+g dead whenever the other slot
+              // fails to register.
+              bindKeymap()
               try {
                 return detailElement(state.status, dependencies.now())
               } catch {
@@ -249,6 +359,7 @@ export function createOpenCodeV2AntigravityTui(
       timer.unref?.()
 
       return () => {
+        disposed = true
         clearInterval(timer)
         for (const dispose of claims) {
           try {
@@ -259,18 +370,6 @@ export function createOpenCodeV2AntigravityTui(
         }
       }
     },
-  }
-}
-
-function emptyStatus(): AccountPoolStatus {
-  return {
-    total: 0,
-    ready: 0,
-    cooling: 0,
-    blocked: 0,
-    disabled: 0,
-    accounts: [],
-    activeByFamily: {},
   }
 }
 

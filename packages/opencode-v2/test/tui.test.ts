@@ -35,9 +35,9 @@ function stubContext() {
     commands: Array<{ id: string; run: () => void; bind?: string }>
   }> = []
   let dialogOptions:
-    | { title: string; options: Array<{ value: number }> }
+    | { title: string; options: Array<{ value: string }> }
     | undefined
-  let dialogSelection: number | undefined
+  let dialogSelection: string | undefined
   const store = { status: undefined as unknown }
 
   const context = {
@@ -93,7 +93,7 @@ function stubContext() {
     toasts,
     layers,
     dialogOptions: () => dialogOptions,
-    setDialogSelection: (value: number | undefined) => {
+    setDialogSelection: (value: string | undefined) => {
       dialogSelection = value
     },
     store: store as {
@@ -111,6 +111,23 @@ async function setupTui(overrides: OpenCodeV2TuiDependencyOverrides = {}) {
   })
   const cleanup = await plugin.setup(harness.context as never)
   return { ...harness, cleanup }
+}
+
+/**
+ * The keymap layer can only be registered from inside a component scope, so a
+ * slot render is what triggers the bind. Render the available claims, then hand
+ * back the registered command.
+ */
+function accountsCommand(
+  claims: CapturedClaim[],
+  layers: Array<{
+    commands: Array<{ id: string; run: () => void; bind?: string }>
+  }>,
+) {
+  for (const claim of claims) claim.render({})
+  return layers[0]?.commands.find(
+    (candidate) => candidate.id === 'antigravity.accounts',
+  )
 }
 
 describe('OpenCode 2 Antigravity TUI plugin', () => {
@@ -133,7 +150,7 @@ describe('OpenCode 2 Antigravity TUI plugin', () => {
     expect(toasts).toEqual([])
 
     current = pool([
-      { email: 'a@example.test', accountIneligible: true },
+      { email: 'a@example.test', enabled: false, accountIneligible: true },
       { email: 'b@example.test' },
     ])
     await Bun.sleep(40)
@@ -177,21 +194,295 @@ describe('OpenCode 2 Antigravity TUI plugin', () => {
     expect(summaryClaim).toBeDefined()
     summaryClaim!.render({})
     expect(layers.length).toBe(1)
-    const command = layers[0]?.commands.find(
-      (candidate) => candidate.id === 'antigravity.accounts',
-    )
+    const command = accountsCommand(claims, layers)
     expect(command).toBeDefined()
     expect(command?.bind).toBe('ctrl+g')
 
-    setDialogSelection(1)
+    command!.run()
+    await Bun.sleep(20)
+    expect(dialogOptions()?.title).toBe('Antigravity accounts')
+    expect(dialogOptions()?.options).toHaveLength(2)
+
+    // Selection carries the stable key, not the pool index.
+    setDialogSelection(dialogOptions()?.options[1]?.value)
     command!.run()
     await Bun.sleep(20)
 
-    expect(dialogOptions()?.title).toBe('Antigravity accounts')
-    expect(dialogOptions()?.options).toHaveLength(2)
     expect(mutations).toBe(1)
     expect(current.accounts[1]?.enabled).toBe(false)
 
+    if (cleanup) await cleanup()
+  })
+
+  test('refuses to re-enable an account Google blocked', async () => {
+    // Regression: the dialog used to toggle `enabled` blindly. Because core
+    // disables an account as it applies the block, that wrote
+    // `enabled: true` next to `accountIneligible: true` — which core's load
+    // path honours, putting an unusable account back into rotation.
+    let current = pool([
+      {
+        email: 'blocked@example.test',
+        enabled: false,
+        accountIneligible: true,
+      },
+      { email: 'ok@example.test' },
+    ])
+    let mutations = 0
+    const {
+      claims,
+      layers,
+      dialogOptions,
+      setDialogSelection,
+      toasts,
+      cleanup,
+    } = await setupTui({
+      loadPool: async () => current,
+      mutatePool: async (mutate) => {
+        mutations += 1
+        const next = mutate(current)
+        if (next) current = next
+        return current
+      },
+    })
+
+    const command = accountsCommand(claims, layers)
+    command!.run()
+    await Bun.sleep(20)
+    setDialogSelection(dialogOptions()?.options[0]?.value)
+    command!.run()
+    await Bun.sleep(20)
+
+    expect(mutations).toBe(0)
+    expect(current.accounts[0]?.enabled).toBe(false)
+    expect(toasts.at(-1)?.variant).toBe('warning')
+    expect(toasts.at(-1)?.message).toContain('ACCOUNT_INELIGIBLE')
+
+    if (cleanup) await cleanup()
+  })
+
+  test('refuses to re-enable an account awaiting validation', async () => {
+    const current = pool([
+      {
+        email: 'verify@example.test',
+        enabled: false,
+        verificationRequired: true,
+      },
+    ])
+    let mutations = 0
+    const {
+      claims,
+      layers,
+      dialogOptions,
+      setDialogSelection,
+      toasts,
+      cleanup,
+    } = await setupTui({
+      loadPool: async () => current,
+      mutatePool: async (mutate) => {
+        mutations += 1
+        return current
+      },
+    })
+
+    const command = accountsCommand(claims, layers)
+    command!.run()
+    await Bun.sleep(20)
+    setDialogSelection(dialogOptions()?.options[0]?.value)
+    command!.run()
+    await Bun.sleep(20)
+
+    expect(mutations).toBe(0)
+    expect(toasts.at(-1)?.message).toContain('validation')
+
+    if (cleanup) await cleanup()
+  })
+
+  test('toggles the intended account after the pool shifts', async () => {
+    // The dialog is built from a snapshot; the write is lock-held and may run
+    // against a pool where an earlier account was removed. Toggling by the
+    // captured index would then edit a different account.
+    let current = pool([
+      { email: 'a@example.test' },
+      { email: 'target@example.test' },
+    ])
+    const {
+      store,
+      claims,
+      layers,
+      dialogOptions,
+      setDialogSelection,
+      cleanup,
+    } = await setupTui({
+      loadPool: async () => current,
+      mutatePool: async (mutate) => {
+        // Simulate a concurrent removal landing before the write.
+        current = pool([{ email: 'target@example.test' }])
+        const next = mutate(current)
+        if (next) current = next
+        return current
+      },
+    })
+
+    const targetKey = store.status?.accounts[1]?.key
+    expect(targetKey).toBeString()
+    setDialogSelection(targetKey)
+    accountsCommand(claims, layers)?.run()
+    await Bun.sleep(20)
+
+    expect(dialogOptions()?.options).toHaveLength(2)
+    expect(current.accounts).toHaveLength(1)
+    expect(current.accounts[0]?.enabled).toBe(false)
+
+    if (cleanup) await cleanup()
+  })
+
+  test('warns instead of guessing when the target vanished', async () => {
+    let current = pool([
+      { email: 'a@example.test' },
+      { email: 'target@example.test' },
+    ])
+    const {
+      store,
+      claims,
+      layers,
+      dialogOptions,
+      setDialogSelection,
+      toasts,
+      cleanup,
+    } = await setupTui({
+      loadPool: async () => current,
+      mutatePool: async (mutate) => {
+        current = pool([{ email: 'a@example.test' }])
+        return current
+      },
+    })
+
+    setDialogSelection(store.status?.accounts[1]?.key)
+    accountsCommand(claims, layers)?.run()
+    await Bun.sleep(20)
+    expect(dialogOptions()?.options).toHaveLength(2)
+    expect(toasts.at(-1)?.variant).toBe('warning')
+    expect(toasts.at(-1)?.message).toContain('changed while the dialog')
+
+    if (cleanup) await cleanup()
+  })
+
+  test('binds the accounts command from the sidebar slot alone', async () => {
+    // The keymap layer needs a component scope, so the bind is attempted from
+    // slot renders. It must not depend on the prompt-footer slot succeeding.
+    const harness = stubContext()
+    const claims = harness.claims
+    harness.context.ui.slot = (claim: Record<string, unknown>) => {
+      if (claim.append === 'prompt.footer.status') {
+        throw new Error('slot unavailable')
+      }
+      claims.push({
+        target: String(claim.append),
+        render: claim.render as (input: unknown) => unknown,
+      })
+      return () => {}
+    }
+    const plugin = createOpenCodeV2AntigravityTui({
+      loadPool: async () => pool([{ email: 'a@example.test' }]),
+      pollMs: 5,
+      now: () => NOW,
+    })
+    const cleanup = await plugin.setup(harness.context as never)
+
+    expect(claims.map((claim) => claim.target)).toEqual(['sidebar.footer'])
+    claims[0]?.render({})
+    expect(harness.layers).toHaveLength(1)
+    expect(
+      harness.layers[0]?.commands.find(
+        (candidate) => candidate.id === 'antigravity.accounts',
+      ),
+    ).toBeDefined()
+
+    if (cleanup) await cleanup()
+  })
+
+  test('reports transitions that happen while the pool is unreadable', async () => {
+    let healthy = true
+    let poolState = pool([{ email: 'a@example.test' }])
+    const { store, toasts, cleanup } = await setupTui({
+      pollMs: 5,
+      now: () => NOW,
+      loadPool: async () => (healthy ? poolState : null),
+    })
+    expect(store.status?.ready).toBe(1)
+
+    // Simulate the server blocking the account while a read fails.
+    healthy = false
+    poolState = pool([
+      { email: 'a@example.test', enabled: false, accountIneligible: true },
+    ])
+    await Bun.sleep(30)
+    expect(store.status).toBeUndefined()
+
+    healthy = true
+    await Bun.sleep(30)
+    expect(store.status?.accounts[0]?.state).toBe('ineligible')
+    expect(toasts.length).toBeGreaterThan(0)
+    expect(toasts[0]?.variant).toBe('warning')
+    expect(toasts[0]?.message).toContain('ACCOUNT_INELIGIBLE')
+
+    if (cleanup) await cleanup()
+  })
+
+  test('does not update disposed UI after a pending refresh', async () => {
+    let resolveLoad: ((value: AccountStorageV4 | null) => void) | undefined
+    let calls = 0
+    const { store, toasts, cleanup } = await setupTui({
+      pollMs: 5,
+      now: () => NOW,
+      loadPool: async () => {
+        calls += 1
+        if (calls === 1) return pool([{ email: 'a@example.test' }])
+        return new Promise<AccountStorageV4 | null>((resolve) => {
+          resolveLoad = resolve
+        })
+      },
+    })
+    expect(store.status?.ready).toBe(1)
+    // Let the second poll start and stall on the pending load.
+    await Bun.sleep(20)
+    if (cleanup) await cleanup()
+    resolveLoad?.(
+      pool([
+        { email: 'a@example.test', enabled: false, accountIneligible: true },
+      ]),
+    )
+    await Bun.sleep(20)
+    expect(store.status?.ready).toBe(1)
+    expect(toasts).toEqual([])
+  })
+
+  test('refuses to toggle an account whose identity can shift', async () => {
+    const current = pool([{}])
+    let mutations = 0
+    const {
+      claims,
+      layers,
+      dialogOptions,
+      setDialogSelection,
+      toasts,
+      cleanup,
+    } = await setupTui({
+      loadPool: async () => current,
+      mutatePool: async (mutate) => {
+        mutations += 1
+        return current
+      },
+    })
+    const command = accountsCommand(claims, layers)
+    command!.run()
+    await Bun.sleep(20)
+    setDialogSelection(dialogOptions()?.options[0]?.value)
+    command!.run()
+    await Bun.sleep(20)
+    expect(mutations).toBe(0)
+    expect(toasts.at(-1)?.variant).toBe('warning')
+    expect(toasts.at(-1)?.message).toContain('no address on file')
     if (cleanup) await cleanup()
   })
 

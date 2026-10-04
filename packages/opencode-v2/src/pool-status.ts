@@ -4,6 +4,8 @@
 // information and never crosses this boundary — accounts are identified by
 // masked email, falling back to pool index.
 
+import { createHash } from 'node:crypto'
+
 import type {
   AccountStorageV4,
   AnyAccountStorage,
@@ -17,12 +19,21 @@ export type AccountState =
   | 'disabled'
 
 export interface AccountStatus {
+  /**
+   * Stable, opaque identity used to match an account across polls. Pool indices
+   * are positional and shift when an account is added or removed, so change
+   * detection must never key on them.
+   */
+  readonly key: string
   readonly index: number
   readonly maskedEmail: string | undefined
   readonly state: AccountState
-  /** Families currently cooling down, e.g. `claude`, `gemini-antigravity`. */
+  /**
+   * Quota families and/or cooldown reasons currently cooling this account,
+   * e.g. `claude`, `gemini-antigravity`, `auth-failure`.
+   */
   readonly coolingFamilies: readonly string[]
-  /** Latest instant at which any family cooldown for this account ends. */
+  /** Latest instant at which any cooldown for this account ends. */
   readonly cooldownUntil: number
 }
 
@@ -59,7 +70,7 @@ export function maskEmail(email: string): string {
   return `${head}***${domain}`
 }
 
-function displayId(account: AccountStatus): string {
+export function displayAccountId(account: AccountStatus): string {
   return account.maskedEmail ?? `#${account.index}`
 }
 
@@ -82,12 +93,52 @@ function enabledOf(account: PoolAccount): boolean {
   return 'enabled' in account ? account.enabled !== false : true
 }
 
+function emailOf(account: PoolAccount): string | undefined {
+  if (!('email' in account) || typeof account.email !== 'string')
+    return undefined
+  const email = account.email.trim()
+  return email.length > 0 ? email : undefined
+}
+
+/**
+ * Stable identity for an account, independent of its position in the pool.
+ *
+ * The raw address never leaves this module (see the redaction note above), so
+ * the key is a truncated digest instead of the email itself. Hashing the email
+ * — rather than the refresh token — keeps the key stable across a bare
+ * refresh-token rotation, which core performs in place. Accounts with no email
+ * fall back to their index, which only holds while pool membership is
+ * unchanged; a caller that mutates on this fallback must fail closed rather
+ * than guess.
+ */
+export function accountKey(account: PoolAccount, index: number): string {
+  const email = emailOf(account)
+  if (!email) return `#${index}`
+  const digest = createHash('sha256').update(email.toLowerCase()).digest('hex')
+  return `e:${digest.slice(0, 12)}`
+}
+
 function resetsOf(account: PoolAccount): Record<string, number | undefined> {
   const resets: Record<string, number | undefined> = {}
   if ('rateLimitResetTimes' in account && account.rateLimitResetTimes) {
     for (const [family, until] of Object.entries(account.rateLimitResetTimes)) {
       resets[family] = until
     }
+  }
+  // V4 also persists an account-wide cooldown that is independent of the
+  // per-family rate limits (auth failure, network error, project error,
+  // validation). core excludes such an account from selection in
+  // `isAccountCoolingDown()`, so reporting it as READY would tell the operator
+  // an account is usable while the router is refusing to dispatch to it.
+  if (
+    'coolingDownUntil' in account &&
+    typeof account.coolingDownUntil === 'number'
+  ) {
+    const reason =
+      'cooldownReason' in account && typeof account.cooldownReason === 'string'
+        ? account.cooldownReason
+        : 'account'
+    resets[reason] = Math.max(resets[reason] ?? 0, account.coolingDownUntil)
   }
   return resets
 }
@@ -102,21 +153,47 @@ function isVerificationRequired(account: PoolAccount): boolean {
   )
 }
 
+/**
+ * A Google-side block (`ACCOUNT_INELIGIBLE` or awaiting validation). The
+ * dialog's mutator calls this on the *fresh* record, not the dialog snapshot,
+ * so a block that lands while the dialog is open is still honoured.
+ */
+export function isAccountBlocked(account: PoolAccount): boolean {
+  return isIneligible(account) || isVerificationRequired(account)
+}
+
+/**
+ * Whether a key is safe to mutate on. Index-derived keys (`#<index>`) are
+ * positional: after a concurrent add or remove they can identify a different
+ * account. A volatile key must never be used to write — fail closed instead.
+ */
+export function isStableAccountKey(key: string): boolean {
+  return key.startsWith('e:')
+}
+
 export function summarizeAccountPool(
   storage: AnyAccountStorage,
   now: number,
 ): AccountPoolStatus {
   const accounts = storage.accounts.map((account, index): AccountStatus => {
+    const email = emailOf(account)
     const resets = resetsOf(account)
     const cooling = cooldownFamilies(resets, now)
     let state: AccountState = 'ready'
-    if (!enabledOf(account)) state = 'disabled'
-    else if (isIneligible(account)) state = 'ineligible'
+    // Precedence matters: core disables an account as it applies a Google-side
+    // block (`markAccountIneligible` / `requestVerification` both call
+    // `setAccountEnabled(index, false)`), so `enabled === false` is a symptom
+    // of the block rather than an operator decision. Checking `enabled` first
+    // would report a Google block as a user-disabled account, drop it out of
+    // the blocked counter, and downgrade the toast from a warning.
+    if (isIneligible(account)) state = 'ineligible'
     else if (isVerificationRequired(account)) state = 'verification'
+    else if (!enabledOf(account)) state = 'disabled'
     else if (cooling.length > 0) state = 'rate-limited'
     return {
+      key: accountKey(account, index),
       index,
-      maskedEmail: account.email ? maskEmail(account.email) : undefined,
+      maskedEmail: email ? maskEmail(email) : undefined,
       state,
       coolingFamilies: cooling,
       cooldownUntil: cooling.reduce((latest, family) => {
@@ -151,12 +228,20 @@ export function diffAccountPoolStatus(
 ): PoolChange[] {
   if (!previous) return []
   const changes: PoolChange[] = []
+  // Match on the stable key, not the pool index: removing or inserting an
+  // account renumbers every later entry, and an index-keyed diff then reports
+  // the survivor as changed (or attributes one account's prior state to
+  // another). Accounts with no email fall back to an index-derived key, so
+  // they degrade to the old behaviour rather than to a wrong match.
+  const previousByKey = new Map(
+    previous.accounts.map((account) => [account.key, account]),
+  )
   for (const account of next.accounts) {
-    const before = previous.accounts.find(
-      (candidate) => candidate.index === account.index,
-    )
+    const before = previousByKey.get(account.key)
+    // An account with no counterpart is newly added. It has no prior state, so
+    // there is no transition to report.
     if (!before) continue
-    const id = displayId(account)
+    const id = displayAccountId(account)
     if (before.state === account.state) {
       if (account.state !== 'rate-limited') continue
       for (const family of account.coolingFamilies) {
@@ -166,14 +251,19 @@ export function diffAccountPoolStatus(
       }
       continue
     }
-    if (account.state === 'disabled' && before.state !== 'disabled') {
-      changes.push({ kind: 'disabled', account: id })
-    } else if (before.state === 'disabled' && account.state !== 'disabled') {
-      changes.push({ kind: 're-enabled', account: id })
-    } else if (account.state === 'ineligible') {
+    // Branch order mirrors the state precedence in `summarizeAccountPool`.
+    // Testing the disabled/re-enabled pair first would swallow a Google block:
+    // core disables an account as it applies the block, so the common
+    // transition is `disabled -> ineligible`, which an earlier
+    // `before === 'disabled'` test would report as "re-enabled".
+    if (account.state === 'ineligible') {
       changes.push({ kind: 'ineligible', account: id })
     } else if (account.state === 'verification') {
       changes.push({ kind: 'verification', account: id })
+    } else if (account.state === 'disabled') {
+      changes.push({ kind: 'disabled', account: id })
+    } else if (before.state === 'disabled') {
+      changes.push({ kind: 're-enabled', account: id })
     } else if (account.state === 'rate-limited') {
       for (const family of account.coolingFamilies) {
         changes.push({ kind: 'rate-limited', account: id, family })
@@ -192,7 +282,7 @@ const STATE_GLYPH: Record<AccountState, string> = {
 }
 
 export function formatAccountLine(account: AccountStatus, now: number): string {
-  const id = displayId(account)
+  const id = displayAccountId(account)
   const glyph = STATE_GLYPH[account.state]
   if (account.state === 'rate-limited') {
     const minutes = Math.max(
@@ -208,15 +298,13 @@ export function formatAccountLine(account: AccountStatus, now: number): string {
   return `${glyph} ${id} READY`
 }
 
-export function formatPoolSummaryLine(
-  status: AccountPoolStatus,
-  activeFamily?: 'claude' | 'gemini',
-): string {
-  const active =
-    activeFamily && status.activeByFamily[activeFamily] !== undefined
-      ? ` · ${activeFamily} #${status.activeByFamily[activeFamily]}`
-      : ''
+/**
+ * One-line pool summary for the prompt footer. Deliberately terse: the caller
+ * has no session context, so there is no family to resolve an "active account"
+ * suffix against — per-account detail belongs in the sidebar lines instead.
+ */
+export function formatPoolSummaryLine(status: AccountPoolStatus): string {
   const blocked = status.blocked > 0 ? ` · ${status.blocked} blocked` : ''
   const disabled = status.disabled > 0 ? ` · ${status.disabled} off` : ''
-  return `AGY ${status.ready}/${status.total} ready${active}${blocked}${disabled}`
+  return `AGY ${status.ready}/${status.total} ready${blocked}${disabled}`
 }

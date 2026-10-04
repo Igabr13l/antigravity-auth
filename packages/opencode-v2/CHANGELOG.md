@@ -12,6 +12,13 @@
 ### Changed
 
 - Re-verified the adapter against OpenCode 2 host beta-19271 (`@opencode-ai/plugin` and `@opencode-ai/cli` test pins bumped from beta-19234); the promise-plugin contract (`http.request` hook, integration OAuth method, `Host.resolve` packaging) is unchanged between the two betas, and the TUI entry is loaded and set up by the beta-19271 TUI process.
+- Fixed Google-blocked accounts (`ACCOUNT_INELIGIBLE`, validation required) rendering as plain `DISABLED`. core disables an account as it applies the block, so testing `enabled` first hid the block from the blocked counter and downgraded its toast to a non-warning. Blocks now outrank the enabled flag.
+- Fixed the accounts dialog re-enabling a blocked account. It wrote `enabled: true` next to `accountIneligible`, which core's load path honours, returning an unusable account to rotation. The dialog now warns and leaves the pool untouched, matching `AccountManager.setAccountEnabled()` and the OpenCode 1 adapter.
+- Fixed pool change detection keying on the pool index. Adding or removing an account renumbers the rest, which reported unchanged accounts as `re-enabled` and attributed one account's prior state to another. Accounts are now matched by an opaque, address-derived key that also survives a bare refresh-token rotation.
+- Fixed the accounts dialog toggling by a stale index. The target is now resolved by key inside the lock-held write; if it is gone, the plugin warns instead of editing whichever account took its position. The dialog also re-checks a Google block on the fresh record inside the lock, refuses positional (index-derived) identities, and refuses when two accounts normalise to the same address key.
+- Fixed account-wide cooldowns (`coolingDownUntil`) displaying as `READY`. core excludes such an account from dispatch, so the TUI contradicted the router. The cooldown reason is now shown alongside per-family rate limits.
+- Fixed the accounts command being registered only from the `prompt.footer.status` slot, leaving `ctrl+g` unreachable when that slot failed to claim. Both slots now retry the bind.
+- Fixed overlapping poll and post-mutation refreshes. Refreshes are now strictly serialised, so a slow read can never race a newer one, and a failed read no longer wipes the diff baseline — the next successful read reports the transitions that occurred while the pool was unreadable. The plugin also no longer publishes UI state from a read that is still in flight when the plugin is disposed.
 
 ## [2.3.0] - 2026-09-17
 
