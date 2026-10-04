@@ -8,7 +8,7 @@ This monorepo ships four packages:
 | --- | --- | --- |
 | [`@cortexkit/opencode-antigravity-auth`](packages/opencode) | OpenCode 1.x server | Intercepts `fetch()`, runs the account pool + quota manager, drives slash commands, and exposes a TUI sidebar through a loopback RPC. |
 | [`@cortexkit/pi-antigravity-auth`](packages/pi) | Pi coding agent | Registers a custom provider with OAuth login + Gemini streaming. |
-| [`@cortexkit/opencode-v2-antigravity-auth`](packages/opencode-v2) | OpenCode 2.x server | Routes the host's native Gemini requests through a loopback bridge backed by the shared account pool and AGY transport, and registers an OAuth method that appends accounts. |
+| [`@cortexkit/opencode-v2-antigravity-auth`](packages/opencode-v2) | OpenCode 2.x server | Routes the host's native Gemini requests through a loopback bridge backed by the shared account pool and AGY transport, registers an OAuth method that appends accounts, and ships a native TUI plugin (pool status footer, per-account sidebar, toasts, account dialog on `ctrl+g`). |
 | [`@cortexkit/antigravity-auth-core`](packages/core) | Any harness | Harness-agnostic core: OAuth PKCE, raw HTTP/1.1 transport, device fingerprint, request transforms, account pool, quota manager, durable storage. All host adapters depend on it. |
 
 ## Risk and terms-of-service warning
