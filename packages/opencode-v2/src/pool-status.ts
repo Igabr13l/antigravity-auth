@@ -222,6 +222,14 @@ export function summarizeAccountPool(
   }
 }
 
+function countByKey(accounts: readonly AccountStatus[]): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const account of accounts) {
+    counts.set(account.key, (counts.get(account.key) ?? 0) + 1)
+  }
+  return counts
+}
+
 export function diffAccountPoolStatus(
   previous: AccountPoolStatus | undefined,
   next: AccountPoolStatus,
@@ -231,12 +239,25 @@ export function diffAccountPoolStatus(
   // Match on the stable key, not the pool index: removing or inserting an
   // account renumbers every later entry, and an index-keyed diff then reports
   // the survivor as changed (or attributes one account's prior state to
-  // another). Accounts with no email fall back to an index-derived key, so
-  // they degrade to the old behaviour rather than to a wrong match.
+  // another).
   const previousByKey = new Map(
     previous.accounts.map((account) => [account.key, account]),
   )
+  // A key is only usable for attribution when it names exactly one account on
+  // each side. Index-derived keys are positional and can change meaning across a
+  // membership change; normalised-duplicate addresses make a key ambiguous.
+  // Both cases are suppressed rather than guessed, so a blocked account is
+  // reported only when we are sure which account moved.
+  const previousCounts = countByKey(previous.accounts)
+  const nextCounts = countByKey(next.accounts)
   for (const account of next.accounts) {
+    if (!isStableAccountKey(account.key)) continue
+    if (
+      (previousCounts.get(account.key) ?? 0) > 1 ||
+      (nextCounts.get(account.key) ?? 0) > 1
+    ) {
+      continue
+    }
     const before = previousByKey.get(account.key)
     // An account with no counterpart is newly added. It has no prior state, so
     // there is no transition to report.

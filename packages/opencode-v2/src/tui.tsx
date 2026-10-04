@@ -44,6 +44,22 @@ interface TuiPoolState {
   status: AccountPoolStatus | undefined
 }
 
+/** How a dialog toggle can be refused inside the lock-held write. */
+type ToggleRefusal = 'missing' | 'ambiguous' | 'blocked'
+
+/**
+ * Thrown from inside the mutation callback. Rejecting the callback (rather than
+ * returning the pool unchanged) is what stops `mutateAccountStorage` from
+ * rewriting the file: it awaits the callback, so a throw unwinds before
+ * `writeJsonAtomic`, leaving the on-disk pool genuinely untouched.
+ */
+class AccountToggleRefused extends Error {
+  constructor(readonly reason: ToggleRefusal) {
+    super(`account toggle refused: ${reason}`)
+    this.name = 'AccountToggleRefused'
+  }
+}
+
 export interface OpenCodeV2TuiDependencies {
   loadPool: () => Promise<AnyAccountStorage | null>
   mutatePool: (
@@ -103,7 +119,6 @@ export function createOpenCodeV2AntigravityTui(
       )
       let previous: AccountPoolStatus | undefined
       let keymapBound = false
-      let refreshChain: Promise<void> = Promise.resolve()
       let disposed = false
 
       const showToast = (
@@ -134,6 +149,7 @@ export function createOpenCodeV2AntigravityTui(
       }
 
       const readOnce = async (): Promise<void> => {
+        if (disposed) return
         const storage = await dependencies.loadPool()
         if (disposed) return
         if (!storage) {
@@ -154,28 +170,39 @@ export function createOpenCodeV2AntigravityTui(
       }
 
       /**
-       * Read the pool, serialising every caller behind the previous read so a
-       * slow read can never race a newer one. Each caller still triggers a
-       * fresh read after all prior reads, so a caller that mutates and then
-       * refreshes never publishes a snapshot older than its own write. The
-       * reads are cheap (a local, lock-held pool file), so chaining them is
-       * safe; we deliberately do not coalesce away a caller's own read.
+       * Refresh the pool with at most one queued read beyond the one in flight.
+       *
+       * Every caller is served by a read that starts no earlier than its own
+       * request: a call that arrives while a read is running sets `refreshQueued`
+       * and is satisfied by the next loop iteration, so a post-mutation refresh
+       * never publishes a snapshot older than its own write. Timer ticks that
+       * arrive during a slow read coalesce into that single queued read instead
+       * of queueing unboundedly. Reads stop once the plugin is disposed.
        */
+      let refreshQueued = false
+      let refreshRunning: Promise<void> | undefined
       const refresh = (): Promise<void> => {
-        const run = refreshChain.then(async () => {
+        refreshQueued = true
+        refreshRunning ??= (async () => {
           try {
-            await readOnce()
-          } catch {
-            // A read that throws is treated like an unreadable pool: publish
-            // unavailability and keep the last good baseline for recovery.
-            if (disposed) return
-            mutateState((draft) => {
-              draft.status = undefined
-            })
+            while (refreshQueued && !disposed) {
+              refreshQueued = false
+              try {
+                await readOnce()
+              } catch {
+                // A read that throws is treated like an unreadable pool:
+                // publish unavailability and keep the last good baseline.
+                if (disposed) return
+                mutateState((draft) => {
+                  draft.status = undefined
+                })
+              }
+            }
+          } finally {
+            refreshRunning = undefined
           }
-        })
-        refreshChain = run.catch(() => {})
-        return run
+        })()
+        return refreshRunning
       }
 
       const openAccountsDialog = async (): Promise<void> => {
@@ -221,76 +248,95 @@ export function createOpenCodeV2AntigravityTui(
             )
             return
           }
-          let outcome: 'ok' | 'missing' | 'ambiguous' | 'blocked' = 'missing'
-          await dependencies.mutatePool((pool) => {
-            const matches: number[] = []
-            pool.accounts.forEach((account, index) => {
-              if (accountKey(account, index) === selected) matches.push(index)
+          // The dialog applies the decision the displayed state implies instead
+          // of inverting whatever is on disk. Inverting would let a stale
+          // snapshot undo a concurrent change: the row read READY, another
+          // process disabled the account, and a blind toggle would re-enable it.
+          const desiredEnabled = snapshotState === 'disabled'
+          try {
+            await dependencies.mutatePool((pool) => {
+              const matches: number[] = []
+              pool.accounts.forEach((account, index) => {
+                if (accountKey(account, index) === selected) matches.push(index)
+              })
+              if (matches.length === 0) {
+                throw new AccountToggleRefused('missing')
+              }
+              if (matches.length > 1) {
+                // Two accounts normalise to the same address key; toggling by
+                // key would edit both. Refuse instead.
+                throw new AccountToggleRefused('ambiguous')
+              }
+              const account = pool.accounts[matches[0]!]!
+              // Re-check the block on the *fresh* record inside the lock: a
+              // block can land between the dialog opening and this write.
+              if (isAccountBlocked(account)) {
+                throw new AccountToggleRefused('blocked')
+              }
+              return {
+                ...pool,
+                accounts: pool.accounts.map((candidate, index) =>
+                  index === matches[0]
+                    ? { ...candidate, enabled: desiredEnabled }
+                    : candidate,
+                ),
+              }
             })
-            if (matches.length === 0) {
-              outcome = 'missing'
-              return undefined
+          } catch (error) {
+            if (!(error instanceof AccountToggleRefused)) throw error
+            switch (error.reason) {
+              case 'missing':
+                showToast(
+                  'Account pool changed while the dialog was open; reopen it to retry',
+                  'warning',
+                )
+                break
+              case 'ambiguous':
+                showToast(
+                  'Multiple pool entries share this address; leaving the pool untouched',
+                  'warning',
+                )
+                break
+              case 'blocked':
+                showToast(
+                  'This account is now blocked by Google; resolve it before re-enabling',
+                  'warning',
+                )
+                break
             }
-            if (matches.length > 1) {
-              // Two accounts normalise to the same address key; toggling by
-              // key would edit both. Leave the pool untouched instead.
-              outcome = 'ambiguous'
-              return undefined
-            }
-            const account = pool.accounts[matches[0]!]!
-            // Re-check the block on the *fresh* record inside the lock: a
-            // block can land between the dialog opening and this write.
-            if (isAccountBlocked(account)) {
-              outcome = 'blocked'
-              return undefined
-            }
-            outcome = 'ok'
-            return {
-              ...pool,
-              accounts: pool.accounts.map((candidate, index) =>
-                index === matches[0]
-                  ? { ...candidate, enabled: candidate.enabled === false }
-                  : candidate,
-              ),
-            }
-          })
-          const finalOutcome = outcome as
-            | 'ok'
-            | 'missing'
-            | 'ambiguous'
-            | 'blocked'
-          if (finalOutcome === 'ok') {
-            await refresh()
             return
           }
-          if (finalOutcome === 'missing') {
-            showToast(
-              'Account pool changed while the dialog was open; reopen it to retry',
-              'warning',
-            )
-          } else if (finalOutcome === 'ambiguous') {
-            showToast(
-              'Multiple pool entries share this address; leaving the pool untouched',
-              'warning',
-            )
-          } else {
-            showToast(
-              'This account is now blocked by Google; resolve it before re-enabling',
-              'warning',
-            )
-          }
+          await refresh()
         } catch {
           // Dialog failures are non-fatal; the pool stays untouched.
         }
       }
 
+      const ACCOUNTS_COMMAND_ID = 'antigravity.accounts'
+
       const bindKeymap = (): void => {
-        if (keymapBound) return
+        if (keymapBound) {
+          // A layer is owned by the component that registered it, and the
+          // host drops it silently if that component unmounts (a slot can be
+          // torn down and remounted). Probe reachability and re-register when
+          // our command is gone, instead of trusting a stale "already bound".
+          try {
+            const alive = ctx.keymap
+              .commands()
+              .some((command) => command.id === ACCOUNTS_COMMAND_ID)
+            if (alive) return
+          } catch {
+            // No command probe on this host build; keep the one-shot guard so
+            // we never register duplicate layers.
+            return
+          }
+          keymapBound = false
+        }
         try {
           ctx.keymap.layer(() => ({
             commands: [
               {
-                id: 'antigravity.accounts',
+                id: ACCOUNTS_COMMAND_ID,
                 title: 'Antigravity: accounts',
                 description: 'Inspect and enable/disable pool accounts',
                 group: 'Antigravity',

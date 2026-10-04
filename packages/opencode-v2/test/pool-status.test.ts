@@ -290,6 +290,34 @@ describe('diffAccountPoolStatus', () => {
     const after = summarizeAccountPool(pool([{ email: 'a@example.test' }]), NOW)
     expect(diffAccountPoolStatus(undefined, after)).toEqual([])
   })
+
+  test('suppresses transitions for positionally-keyed accounts', () => {
+    // Address-less accounts key by index, which shifts with membership; a diff
+    // must not attribute the removed account's state to whichever account
+    // inherited its position.
+    const before = summarizeAccountPool(pool([{}, { enabled: false }]), NOW)
+    const after = summarizeAccountPool(pool([{ enabled: false }]), NOW)
+    expect(after.accounts[0]?.key).toBe('#0')
+    expect(diffAccountPoolStatus(before, after)).toEqual([])
+  })
+
+  test('suppresses transitions when two accounts share a normalised address', () => {
+    // `User@` and `user@` are distinct to core (case-sensitive dedup) but
+    // normalise to the same key, so neither transition can be attributed.
+    const before = summarizeAccountPool(
+      pool([{ email: 'User@example.test' }, { email: 'user@example.test' }]),
+      NOW,
+    )
+    const after = summarizeAccountPool(
+      pool([
+        { email: 'User@example.test', enabled: false },
+        { email: 'user@example.test' },
+      ]),
+      NOW,
+    )
+    expect(before.accounts[0]?.key).toBe(before.accounts[1]?.key)
+    expect(diffAccountPoolStatus(before, after)).toEqual([])
+  })
 })
 
 describe('formatting', () => {

@@ -353,6 +353,8 @@ describe('OpenCode 2 Antigravity TUI plugin', () => {
       loadPool: async () => current,
       mutatePool: async (mutate) => {
         current = pool([{ email: 'a@example.test' }])
+        const next = mutate(current)
+        if (next) current = next
         return current
       },
     })
@@ -455,6 +457,115 @@ describe('OpenCode 2 Antigravity TUI plugin', () => {
     await Bun.sleep(20)
     expect(store.status?.ready).toBe(1)
     expect(toasts).toEqual([])
+  })
+
+  test('applies the decision the displayed state implies', async () => {
+    // Regression: a blind invert would re-enable an account another actor
+    // disabled between the dialog snapshot and the write.
+    let current = pool([{ email: 'a@example.test' }])
+    const { store, claims, layers, setDialogSelection, cleanup } =
+      await setupTui({
+        loadPool: async () => current,
+        mutatePool: async (mutate) => {
+          current = pool([{ email: 'a@example.test', enabled: false }])
+          const next = mutate(current)
+          if (next) current = next
+          return current
+        },
+      })
+    const command = accountsCommand(claims, layers)
+    command!.run()
+    await Bun.sleep(20)
+    setDialogSelection(store.status?.accounts[0]?.key)
+    command!.run()
+    await Bun.sleep(20)
+    expect(current.accounts[0]?.enabled).toBe(false)
+    if (cleanup) await cleanup()
+  })
+
+  test('refuses a block that lands while the dialog is open', async () => {
+    let current = pool([{ email: 'a@example.test' }])
+    const { store, claims, layers, setDialogSelection, toasts, cleanup } =
+      await setupTui({
+        loadPool: async () => current,
+        mutatePool: async (mutate) => {
+          current = pool([
+            {
+              email: 'a@example.test',
+              enabled: false,
+              accountIneligible: true,
+            },
+          ])
+          const next = mutate(current)
+          if (next) current = next
+          return current
+        },
+      })
+    const command = accountsCommand(claims, layers)
+    command!.run()
+    await Bun.sleep(20)
+    setDialogSelection(store.status?.accounts[0]?.key)
+    command!.run()
+    await Bun.sleep(20)
+    expect(current.accounts[0]?.enabled).toBe(false)
+    expect(
+      toasts.some((toast) => toast.message.includes('blocked by Google')),
+    ).toBe(true)
+    if (cleanup) await cleanup()
+  })
+
+  test('coalesces refreshes and stops reading after disposal', async () => {
+    let calls = 0
+    let release: (() => void) | undefined
+    const { cleanup } = await setupTui({
+      pollMs: 5,
+      loadPool: async () => {
+        calls += 1
+        if (calls === 1) return pool([{ email: 'a@example.test' }])
+        await new Promise<void>((resolve) => {
+          release = resolve
+        })
+        return null
+      },
+    })
+    // Several ticks pass while the second read hangs; they must coalesce into a
+    // single queued read instead of stacking one per tick.
+    await Bun.sleep(30)
+    expect(calls).toBe(2)
+    if (cleanup) await cleanup()
+    release?.()
+    await Bun.sleep(20)
+    expect(calls).toBe(2)
+  })
+
+  test('re-registers the accounts command if its layer is dropped', async () => {
+    const harness = stubContext()
+    let reachable: string[] = []
+    ;(
+      harness.context.keymap as unknown as {
+        commands: () => Array<{ id: string }>
+      }
+    ).commands = () => reachable.map((id) => ({ id }))
+    const plugin = createOpenCodeV2AntigravityTui({
+      loadPool: async () => pool([{ email: 'a@example.test' }]),
+      pollMs: 5,
+      now: () => NOW,
+    })
+    const cleanup = await plugin.setup(harness.context as never)
+
+    harness.claims[0]!.render({})
+    expect(harness.layers).toHaveLength(1)
+
+    reachable = ['antigravity.accounts']
+    harness.claims[0]!.render({})
+    expect(harness.layers).toHaveLength(1)
+
+    // The owning component unmounts, taking the layer with it.
+    reachable = []
+    harness.claims[0]!.render({})
+    expect(harness.layers).toHaveLength(2)
+
+    if (cleanup) await cleanup()
   })
 
   test('refuses to toggle an account whose identity can shift', async () => {

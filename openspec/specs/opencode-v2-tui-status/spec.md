@@ -151,7 +151,10 @@ cooldowns, disable, and re-enable transitions.
 
 Change detection SHALL match accounts by their stable key rather than by pool
 index, so that inserting or removing an account does not renumber the remainder
-into false transitions.
+into false transitions. A transition SHALL only be reported when the key
+identifies exactly one account on each side: keys derived from pool position,
+and keys shared by more than one account, SHALL be skipped rather than
+attributed to the wrong account.
 
 #### Scenario: An account is removed from the pool
 
@@ -159,13 +162,26 @@ into false transitions.
   position
 - **THEN** no transition is reported for the accounts that merely shifted
 
+#### Scenario: An address-less account inherits a position
+
+- **WHEN** an account with no address takes the index another account vacated
+- **THEN** no transition is reported for it, because its position is not an
+  identity
+
+#### Scenario: Two accounts share a normalised address
+
+- **WHEN** two accounts normalise to the same key and only one changes state
+- **THEN** no transition is reported, because neither can be attributed
+
 ### Requirement: Reads are serialized and re-baselined
 
 Concurrent poll and post-mutation refreshes SHALL be serialized so that a caller
-never receives a snapshot older than its own request. When a read fails, the
-plugin SHALL drop the rendered snapshot and re-baseline, so the next successful
-read reports real changes instead of diffing against a baseline the operator
-never saw.
+never receives a snapshot older than its own request. Refreshes that arrive
+while a read is in flight SHALL coalesce into a single queued read rather than
+accumulating one per call. When a read fails, the plugin SHALL drop the rendered
+snapshot but keep the last good baseline, so the next successful read reports
+the changes that occurred in the gap. No further read SHALL start once the
+plugin has been disposed.
 
 #### Scenario: Pool becomes unreadable and recovers
 
@@ -177,6 +193,17 @@ never saw.
 - **WHEN** a poll read is still in flight as a mutation completes
 - **THEN** the post-mutation refresh waits for it and republishes, so the
   displayed state is never older than the write
+
+#### Scenario: Polls arrive during a slow read
+
+- **WHEN** several poll intervals elapse while one read is stalled
+- **THEN** they coalesce into a single queued read instead of one read per
+  interval
+
+#### Scenario: The plugin is disposed mid-read
+
+- **WHEN** the cleanup runs while a read is pending
+- **THEN** the pending read does not start another and does not publish state
 
 ### Requirement: Accounts dialog
 
@@ -231,6 +258,29 @@ the pool since the dialog was built.
 - **THEN** the plugin warns and leaves the pool untouched, rather than toggling
   all of them at once
 
+### Requirement: The dialog applies the displayed decision
+
+The dialog SHALL set the account's `enabled` flag to the value the displayed
+state implies (enabled when the row showed DISABLED, disabled otherwise), not
+invert whatever value the fresh record happens to hold. A concurrent change
+between display and write SHALL NOT be reversed.
+
+#### Scenario: Another actor disables the account mid-dialog
+
+- **WHEN** the row showed READY and the account is disabled before the write
+- **THEN** the write leaves it disabled, rather than re-enabling it
+
+### Requirement: A refused toggle does not rewrite the pool
+
+When the dialog refuses a toggle (missing target, ambiguous identity, or a
+block that landed), the mutation SHALL abort before the pool file is written,
+so no watcher sees a spurious modification and no migration is triggered.
+
+#### Scenario: Toggle refused inside the lock
+
+- **WHEN** the mutation callback rejects the toggle
+- **THEN** the pool file is not rewritten
+
 ### Requirement: The dialog will not re-enable a blocked account
 
 The dialog SHALL NOT re-enable an account carrying a Google access block. core
@@ -266,7 +316,9 @@ accounts that normalise to the same key.
 
 The keymap layer SHALL be registered from whichever slot the host mounts, so
 that a failure to claim one surface does not leave the accounts command
-unreachable.
+unreachable. Because the host owns a layer by the component that registered it,
+the plugin SHALL re-register the command when a later render finds it no longer
+reachable.
 
 #### Scenario: Prompt-footer slot unavailable
 
@@ -274,6 +326,13 @@ unreachable.
   `sidebar.footer`
 - **THEN** rendering the sidebar registers the keymap layer and the accounts
   command remains reachable
+
+#### Scenario: The owning component unmounts
+
+- **WHEN** a render finds the accounts command no longer reachable, because the
+  layer's component was torn down
+- **THEN** the plugin registers the layer again instead of trusting its
+  already-bound flag
 
 ### Requirement: TUI failures are non-fatal
 
