@@ -1534,7 +1534,93 @@ describe('transform/gemini', () => {
     })
   })
 
+  describe('toGeminiSchema - exclusive bounds (Antigravity 400 INVALID_ARGUMENT)', () => {
+    it('moves exclusiveMinimum to the description without the move option', () => {
+      const result = toGeminiSchema({
+        type: 'number',
+        exclusiveMinimum: 0,
+      }) as Record<string, unknown>
+      expect(result).not.toHaveProperty('exclusiveMinimum')
+      expect(result.description).toBe('exclusiveMinimum: 0')
+    })
+
+    it('moves exclusiveMaximum to the description without the move option', () => {
+      const result = toGeminiSchema({
+        type: 'integer',
+        exclusiveMaximum: 100,
+      }) as Record<string, unknown>
+      expect(result).not.toHaveProperty('exclusiveMaximum')
+      expect(result.description).toBe('exclusiveMaximum: 100')
+    })
+
+    it('appends exclusive bounds to an existing description', () => {
+      const result = toGeminiSchema({
+        type: 'number',
+        description: 'Port number',
+        exclusiveMinimum: 0,
+      }) as Record<string, unknown>
+      expect(result).not.toHaveProperty('exclusiveMinimum')
+      expect(result.description).toBe('Port number (exclusiveMinimum: 0)')
+    })
+
+    it('moves nested exclusive bounds on the default Gemini path', () => {
+      const result = toGeminiSchema({
+        type: 'object',
+        properties: {
+          count: { type: 'integer', exclusiveMinimum: 0 },
+        },
+      }) as Record<string, Record<string, unknown>>
+      const count = result.properties?.count as Record<string, unknown>
+      expect(count).not.toHaveProperty('exclusiveMinimum')
+      expect(count?.description).toBe('exclusiveMinimum: 0')
+    })
+
+    it('keeps supported numeric constraints (minimum) on the default path', () => {
+      const result = toGeminiSchema({
+        type: 'number',
+        minimum: 0,
+      }) as Record<string, unknown>
+      expect(result.minimum).toBe(0)
+      expect(result).not.toHaveProperty('description')
+    })
+
+    it('preserves schema semantics when the move option already moves all numerics', () => {
+      const result = toGeminiSchema(
+        { type: 'number', minimum: 1, exclusiveMinimum: 1 },
+        { moveNumericConstraintsToDescription: true },
+      ) as Record<string, unknown>
+      expect(result).not.toHaveProperty('minimum')
+      expect(result).not.toHaveProperty('exclusiveMinimum')
+      expect(result.description).toBe('minimum: 1, exclusiveMinimum: 1')
+    })
+  })
+
   describe('applyGeminiTransforms - full integration', () => {
+    it('converts flat OpenAI-style tool schemas before the functionDeclarations wrap', () => {
+      const payload: RequestPayload = {
+        contents: [],
+        tools: [
+          {
+            name: 'counter',
+            description: 'Counts',
+            parameters: {
+              type: 'object',
+              properties: {
+                count: { type: 'number', exclusiveMinimum: 0 },
+              },
+            },
+          },
+        ],
+      }
+
+      applyGeminiTransforms(payload, { model: 'gemini-3.8-flash' })
+
+      const wire = JSON.stringify(payload.tools)
+      expect(wire).not.toMatch(/"exclusiveMinimum"\s*:/)
+      expect(wire).toContain('exclusiveMinimum: 0')
+      expect(wire).toContain('"type":"NUMBER"')
+    })
+
     it('wraps tools in functionDeclarations after normalization', () => {
       const payload: RequestPayload = {
         contents: [],

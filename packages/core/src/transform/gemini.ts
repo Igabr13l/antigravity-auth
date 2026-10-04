@@ -68,6 +68,14 @@ const NUMERIC_SCHEMA_CONSTRAINTS = new Set([
   'multipleOf',
 ])
 
+// Gemini's Schema proto has no exclusive-bound fields (only minimum/maximum),
+// and Antigravity's strict protobuf validation rejects them with 400
+// INVALID_ARGUMENT, so they must move to the description on every target.
+const EXCLUSIVE_BOUND_CONSTRAINTS = new Set([
+  'exclusiveMinimum',
+  'exclusiveMaximum',
+])
+
 export interface GeminiSchemaOptions {
   /**
    * AGY's GPT bridge re-encodes protobuf numeric constraints as strings before
@@ -134,12 +142,12 @@ export function toGeminiSchema(
       // Keep enum values as-is
       result[key] = value
     } else if (
-      options.moveNumericConstraintsToDescription &&
-      NUMERIC_SCHEMA_CONSTRAINTS.has(key)
+      (options.moveNumericConstraintsToDescription &&
+        NUMERIC_SCHEMA_CONSTRAINTS.has(key)) ||
+      (EXCLUSIVE_BOUND_CONSTRAINTS.has(key) &&
+        (typeof value === 'string' || typeof value === 'number'))
     ) {
-      if (typeof value === 'string' || typeof value === 'number') {
-        numericConstraintHints.push(`${key}: ${value}`)
-      }
+      numericConstraintHints.push(`${key}: ${value}`)
     } else if (key === 'default' || key === 'examples') {
       // Keep default and examples as-is
       result[key] = value
@@ -433,6 +441,14 @@ export function normalizeGeminiTools(
       if (newTool.custom) {
         delete newTool.custom
       }
+
+      // wrapToolsAsFunctionDeclarations falls back to the tool's raw schema
+      // fields once no function/custom wrapper survives, so mirror the
+      // transformed schema onto them; otherwise the unconverted JSON Schema
+      // (exclusiveMinimum, $schema, …) reaches the wire untouched.
+      if (newTool.parameters !== undefined) newTool.parameters = schema
+      if (newTool.input_schema !== undefined) newTool.input_schema = schema
+      if (newTool.inputSchema !== undefined) newTool.inputSchema = schema
 
       return newTool
     },

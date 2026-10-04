@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed every Antigravity tool-bearing request failing with `Antigravity HTTP 400 (INVALID_ARGUMENT)`: Gemini's Schema proto has no `exclusiveMinimum`/`exclusiveMaximum` fields, so Antigravity's strict protobuf validation rejected the payload ("Unknown name ... Cannot find field"). core's `toGeminiSchema` now moves exclusive numeric bounds to a description hint on every target, not only when the GPT numeric-constraint move is enabled.
+
 ### Added
 
 - Added a native OpenCode 2 TUI plugin (`./tui` entry): prompt-footer pool summary, sidebar footer per-account status, toast notifications for pool changes (ineligibility, validation, cooldowns, enable/disable), and an accounts dialog bound to `ctrl+g` to inspect and toggle accounts. Verified against host beta-19271: footer summary renders reactively, the dialog lists masked accounts, and selection persists through the lock-held pool mutation. Accounts are displayed by masked email only; Solid/OpenTUI runtimes are resolved from the host's embedded copies (optional peers).

@@ -59,13 +59,23 @@ When tools are present the bridge SHALL set
 `toolConfig.functionCallingConfig.mode = "VALIDATED"`; when no tools remain it
 SHALL remove `toolConfig`. Tool schemas SHALL be normalized through the shared
 sanitizers (unsupported JSON-Schema fields removed or converted), with numeric
-constraints moved to descriptions for GPT-family targets.
+constraints moved to descriptions for GPT-family targets. Gemini's Schema proto
+has no exclusive-bound fields, so `exclusiveMinimum`/`exclusiveMaximum` SHALL be
+moved to descriptions for every target, not only GPT-family ones.
 
 #### Scenario: Host sends tools
 
 - **WHEN** the payload includes function declarations
 - **THEN** the outgoing request declares `VALIDATED` tool calling mode and
   contains only Antigravity-compatible schema fields
+
+#### Scenario: Tool schema carries exclusive numeric bounds
+
+- **WHEN** a declaration's schema contains `exclusiveMinimum` or
+  `exclusiveMaximum` on a Gemini-family target
+- **THEN** the outgoing request contains no exclusive-bound field and the bound
+  survives as a description hint, so Antigravity's strict protobuf validation
+  cannot reject the payload with 400 INVALID_ARGUMENT
 
 ### Requirement: Function-call signature policy
 
