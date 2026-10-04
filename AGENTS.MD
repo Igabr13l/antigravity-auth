@@ -127,6 +127,9 @@ packages/
 │       └── hooks/               # Lifecycle hooks (auto-update checker, etc.)
 ├── opencode-v2/             # OpenCode 2 Promise-plugin adapter
 │   ├── src/plugin.ts            # Request hook + loopback bridge + OAuth integration
+│   ├── src/tui.tsx              # TUI plugin — pool status slots, toasts, accounts dialog
+│   ├── src/pool-status.ts       # Pure pool → display-status derivation (masked email only)
+│   ├── src/paths.ts             # Shared pool-file path resolution
 │   ├── test/                    # Contract and final-wire tests
 │   └── scripts/                 # Packed-consumer Host.resolve smoke test
 └── pi/                      # Pi host adapter — thinner facade around core
@@ -181,6 +184,9 @@ Per-account device fingerprints stored in `antigravity-accounts.json`. Each fing
 - [docs/ANTIGRAVITY_API_SPEC.md](docs/ANTIGRAVITY_API_SPEC.md) — API reference
 - [CHANGELOG.md](CHANGELOG.md) — Version history
 - [ARCHITECTURE.md](ARCHITECTURE.md) and [STRUCTURE.md](STRUCTURE.md) — repo-level architecture and file-system map
+- `openspec/` — OpenSpec capability specs (validate with `openspec validate --specs --strict`); behavior changes to the adapters must update the matching spec
 - [biome.json](biome.json) — formatter + linter config
 - [lefthook.yml](lefthook.yml) — pre-commit Biome hook
 - [mise.toml](mise.toml) — pinned `bun` + `node` versions
+
+OpenCode 2 is the `0.0.0-beta-*` line of `@opencode-ai/plugin` / `@opencode-ai/cli` (promise-plugin API: `session.hook('http.request')`, `integration.transform`); OpenCode 1 is the `1.x` line. The v2 adapter pins both to the same beta and the e2e suite runs the real host binary.

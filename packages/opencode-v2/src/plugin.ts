@@ -10,7 +10,7 @@
 // back to OpenCode.
 
 import { randomUUID } from 'node:crypto'
-import { appendFileSync, chmodSync, existsSync, mkdirSync } from 'node:fs'
+import { appendFileSync, chmodSync, mkdirSync } from 'node:fs'
 import type { ServerResponse } from 'node:http'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -19,14 +19,17 @@ import { dirname, join } from 'node:path'
 
 import {
   AccountManager,
+  type AccountStorageV4,
+  type AgyRequestScope,
   AgyRequestSessionStore,
-  applyClaudeTransforms,
   ANTIGRAVITY_ENDPOINT_FALLBACKS,
-  CLAUDE_THINKING_MAX_OUTPUT_TOKENS,
+  type AntigravityTokenExchangeResult,
+  applyClaudeTransforms,
   authorizeAntigravity,
   buildAgyAgentRequestMetadata,
-  buildImageGenerationConfig,
   buildAntigravityHarnessUserAgent,
+  buildImageGenerationConfig,
+  CLAUDE_THINKING_MAX_OUTPUT_TOKENS,
   defaultAccountStorageStore,
   ensureProjectContext,
   exchangeAntigravity,
@@ -35,21 +38,18 @@ import {
   getModelFamily,
   isImageGenerationModel,
   loadAccountStorage,
+  type ManagedAccount,
   mutateAccountStorage,
   normalizeGeminiTools,
+  type OAuthAuthDetails,
   orderAgyRequestPayloadInPlace,
   parseRateLimitReason,
   parseRefreshParts,
   refreshAntigravityToken,
   resolveModelForHeaderStyle,
-  sanitizeCrossModelPayloadInPlace,
   SKIP_THOUGHT_SIGNATURE,
+  sanitizeCrossModelPayloadInPlace,
   toGeminiSchema,
-  type AccountStorageV4,
-  type AgyRequestScope,
-  type AntigravityTokenExchangeResult,
-  type ManagedAccount,
-  type OAuthAuthDetails,
 } from '@cortexkit/antigravity-auth-core'
 import type {
   Credential,
@@ -60,6 +60,7 @@ import type { Registration } from '@opencode-ai/plugin/promise/registration'
 import type { SessionRequestKind } from '@opencode-ai/plugin/promise/session'
 
 import { waitForAntigravityCode } from './oauth-callback.ts'
+import { accountsFilePath } from './paths.ts'
 
 type ResolvedModel = ReturnType<typeof resolveModelForHeaderStyle>
 interface GeminiPart {
@@ -197,17 +198,6 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-function configDir(): string {
-  const explicit = process.env.OPENCODE_CONFIG_DIR?.trim()
-  if (explicit) return explicit
-  if (process.platform === 'win32' && process.env.APPDATA?.trim()) {
-    const appdata = join(process.env.APPDATA.trim(), 'opencode')
-    if (existsSync(join(appdata, 'antigravity-accounts.json'))) return appdata
-  }
-  const xdg = process.env.XDG_CONFIG_HOME?.trim()
-  return xdg ? join(xdg, 'opencode') : join(homedir(), '.config', 'opencode')
-}
-
 function stateDir(): string {
   const xdg = process.env.XDG_STATE_HOME?.trim()
   return xdg
@@ -215,9 +205,7 @@ function stateDir(): string {
     : join(homedir(), '.local', 'state', 'opencode')
 }
 
-const ACCOUNTS_FILE =
-  process.env.ANTIGRAVITY_ACCOUNTS_FILE?.trim() ||
-  join(configDir(), 'antigravity-accounts.json')
+const ACCOUNTS_FILE = accountsFilePath()
 const LOGFILE = join(stateDir(), 'antigravity-v2.log')
 const INTEGRATION_ID = 'google' as Integration.ID
 const METHOD_ID = 'antigravity-v2' as Integration.MethodID
@@ -241,7 +229,10 @@ function log(...args: unknown[]): void {
   }
 }
 
-const MODEL_IDS = new Set([
+// Model IDs the bridge routes, mirroring providers.google.models in
+// example/opencode.json. Exported so the drift-guard test can assert the two
+// stay in sync.
+export const ROUTABLE_MODEL_IDS: ReadonlySet<string> = new Set([
   'gemini-3.8-flash',
   'gemini-3.7-flash',
   'gemini-3.6-flash',
@@ -1213,7 +1204,11 @@ export function createOpenCodeV2AntigravityPlugin(
         await ctx.session.hook('http.request', async (event) => {
           try {
             if (event.model.providerID !== 'google') return
-            if (event.kind !== 'title' && !MODEL_IDS.has(event.model.id)) return
+            if (
+              event.kind !== 'title' &&
+              !ROUTABLE_MODEL_IDS.has(event.model.id)
+            )
+              return
             const url = new URL(event.request.url)
             if (
               !/\/models\/[^:]+:(?:streamGenerateContent|generateContent)/.test(

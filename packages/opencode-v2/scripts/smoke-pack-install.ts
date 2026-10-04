@@ -84,7 +84,7 @@ async function main(): Promise<void> {
     }
     if (!resolved.tui || !resolved.rpc) {
       throw new Error(
-        'OpenCode 2 host resolver requires inert TUI and RPC compatibility exports',
+        'OpenCode 2 host resolver requires TUI and RPC compatibility exports',
       )
     }
     if (
@@ -114,7 +114,8 @@ async function main(): Promise<void> {
     if (
       !manifest.files?.includes('dist/') ||
       !manifest.files.includes('CHANGELOG.md') ||
-      manifest['oc-plugin']?.[0] !== 'server'
+      manifest['oc-plugin']?.[0] !== 'server' ||
+      !manifest['oc-plugin']?.includes('tui')
     ) {
       throw new Error('Packed OpenCode 2 manifest lost its server contract')
     }
@@ -124,11 +125,16 @@ async function main(): Promise<void> {
     if (typeof module.default?.setup !== 'function') {
       throw new Error('Packed OpenCode 2 server entry has no setup function')
     }
-    const tuiModule = (await import(resolved.tui)) as {
-      default?: { tui?: unknown }
-    }
-    if (typeof tuiModule.default?.tui !== 'function') {
-      throw new Error('Packed OpenCode 2 compatibility TUI entry is invalid')
+    // The TUI entry is host-consumed: OpenCode 2's loader rewrites its
+    // `@opentui/solid/jsx-runtime` import to the embedded runtime, so it only
+    // resolves outside the host when that runtime is installed. Assert the
+    // packed resolution path instead of importing it here.
+    const tuiPath = realpathSync(fileURLToPath(resolved.tui))
+    const tuiRelative = relative(installedPath, tuiPath)
+    if (tuiRelative.startsWith('..') || isAbsolute(tuiRelative)) {
+      throw new Error(
+        `Packed OpenCode 2 TUI entry escaped the installed package: ${resolved.tui}`,
+      )
     }
     const rpcModule = (await import(resolved.rpc)) as {
       default?: { id?: unknown }

@@ -45,7 +45,7 @@ graph LR
   E2E --> Core
 ```
 
-`packages/opencode/package.json` exposes the OpenCode 1 server and TUI subpaths. `packages/opencode-v2/package.json` publishes compiled `dist/plugin.js`, declares `oc-plugin: ['server']`, and exposes the `./server` subpath required by OpenCode 2's real `Host.resolve()` path alongside inert `./tui` and `./rpc` subpaths that satisfy cross-platform resolver probing. The Pi package's `pi.extensions` field is the analogous host entry. Both OpenCode adapters and Pi depend one-way on core.
+`packages/opencode/package.json` exposes the OpenCode 1 server and TUI subpaths. `packages/opencode-v2/package.json` publishes compiled `dist/plugin.js`, declares `oc-plugin: ['server', 'tui']`, and exposes the `./server` and `./tui` subpaths consumed by OpenCode 2's real `Host.resolve()` path plus an inert `./rpc` subpath that satisfies cross-platform resolver probing. The `./tui` entry (`src/tui.tsx`) is a real TUI plugin: it renders the shared account pool in the `prompt.footer.status` and `sidebar.footer` slots, toasts pool changes, and registers an `Antigravity: accounts` dialog command (default binding `ctrl+g`); the host loader rewrites its `@opentui/solid/jsx-runtime` import to the embedded OpenTUI runtime, so no Solid packages ship at runtime (optional peers only). The Pi package's `pi.extensions` field is the analogous host entry. Both OpenCode adapters and Pi depend one-way on core.
 
 ### Process topology at runtime
 
@@ -219,7 +219,7 @@ The adapter uses the shared v4 `antigravity-accounts.json` pool. `ACCOUNT_INELIG
 
 `createOpenCodeV2AntigravityPlugin(overrides)` is the test seam. Production uses core defaults; deterministic tests inject OAuth/project/transport functions while retaining the production loopback and host-hook pipeline. Disposal unregisters host hooks, clears pending jobs and timers, aborts active requests, closes all loopback connections, clears session metadata, and disposes the account manager.
 
-The `oc-plugin` manifest enables only the server entry (`packages/opencode-v2/src/plugin.ts`). OpenCode 2's cross-platform host resolver also probes `./tui` and `./rpc` subpaths even for server-only packages; the package exports inert placeholders (`packages/opencode-v2/src/tui.ts`, `packages/opencode-v2/src/rpc.ts`) to satisfy resolver discovery while leaving UI rendering to OpenCode 2's native provider UI.
+The `oc-plugin` manifest enables the server (`packages/opencode-v2/src/plugin.ts`) and TUI (`packages/opencode-v2/src/tui.tsx`) entries. The TUI plugin reads the same pool file through the core storage layer, derives display status via the pure helpers in `packages/opencode-v2/src/pool-status.ts` (masked email only — the redaction-sensitive `label` never reaches the UI), and treats every host UI call as best-effort so a TUI failure can never take down the TUI itself. The `./rpc` export (`packages/opencode-v2/src/rpc.ts`) stays an inert placeholder for resolver discovery.
 
 ## OpenTUI process and trust boundary
 

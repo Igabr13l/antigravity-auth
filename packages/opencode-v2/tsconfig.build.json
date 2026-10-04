@@ -8,8 +8,10 @@
     "declarationMap": true,
     "sourceMap": true,
     "allowImportingTsExtensions": false,
-    "rewriteRelativeImportExtensions": true
+    "rewriteRelativeImportExtensions": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "@opentui/solid"
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
   "exclude": ["src/**/*.test.ts"]
 }

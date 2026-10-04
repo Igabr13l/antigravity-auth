@@ -41,8 +41,11 @@ OpenCode 2.x                          本插件                        Antigravi
 回环端点既保留了 core 的原始 HTTP/1.1 传输（agy 的 header 顺序、代理支持），又让宿主看到一个
 可以正常流式读取与取消的 SSE 响应。
 
-`oc-plugin` 清单只启用 server 入口。导出的 `/tui` 与 `/rpc` 模块是惰性的，仅用于兼容
-OpenCode 2 跨平台包解析器对这些子路径的探测；界面仍由 OpenCode 2 的原生 provider UI 渲染。
+`oc-plugin` 清单同时启用 server 与 TUI 入口。TUI 插件（`./tui`）在 OpenCode 2 的终端界面中
+展示共享账号池：提示符页脚的一行摘要（随账号池变化实时刷新）、侧边栏页脚的逐账号状态、
+账号池变化时的 toast 通知（不可用、需要验证、冷却），以及账号对话框——按 `ctrl+g` 即可
+查看并启用/停用账号。账号一律以掩码邮箱显示。导出的 `/rpc` 模块保持惰性，仅用于兼容
+OpenCode 2 跨平台包解析器对该子路径的探测；对话界面仍由 OpenCode 2 的原生 provider UI 渲染。
 
 ## 安装
 

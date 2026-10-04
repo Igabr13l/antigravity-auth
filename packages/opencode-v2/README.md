@@ -44,9 +44,15 @@ whatever `event.request` the hook leaves behind through its own HTTP client, and
 core's raw HTTP/1.1 transport (agy header order, proxy support) while the host still sees a
 plain SSE response it can stream and cancel.
 
-The `oc-plugin` manifest enables only the server entry. The exported `/tui` and `/rpc` modules
-are inert and exist solely because OpenCode 2's cross-platform package resolver probes those
-subpaths even for server-only packages; OpenCode 2 continues to render its native provider UI.
+The `oc-plugin` manifest enables the server and TUI entries. The TUI plugin
+(`./tui`) renders the shared account pool inside OpenCode 2's TUI: a one-line
+summary under the prompt footer (refreshed as the pool changes), per-account
+lines in the sidebar footer, toast notifications on pool changes (ineligibility,
+validation, cooldowns), and an accounts dialog — press `ctrl+g` to inspect and
+enable/disable accounts. Accounts are shown by masked email only. The exported
+`/rpc` module is inert and exists solely because OpenCode 2's cross-platform
+package resolver probes that subpath; the chat surface itself remains OpenCode
+2's native provider UI.
 
 ## Install
 
