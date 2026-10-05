@@ -55,14 +55,16 @@
           "modelID": "claude-sonnet-4-6-thinking",
           "package": "@opencode-ai/ai/providers/google",
           "capabilities": { "tools": true, "input": ["text", "image", "pdf"], "output": ["text"] },
-          "limit": { "context": 250000, "output": 64000 }
+          "limit": { "context": 250000, "output": 64000 },
+          "variants": []
         },
         "claude-opus-4-6-thinking": {
           "name": "Claude Opus 4.6 (Thinking)",
           "modelID": "claude-opus-4-6-thinking",
           "package": "@opencode-ai/ai/providers/google",
           "capabilities": { "tools": true, "input": ["text", "image", "pdf"], "output": ["text"] },
-          "limit": { "context": 250000, "output": 64000 }
+          "limit": { "context": 250000, "output": 64000 },
+          "variants": []
         },
         "claude-sonnet-5-5-thinking": {
           "name": "Claude Sonnet 5.5 (Thinking)",

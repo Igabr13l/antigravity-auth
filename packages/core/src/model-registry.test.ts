@@ -133,6 +133,18 @@ describe('model registry', () => {
     expect(aliases['gemini-claude-opus-4-6-thinking-medium']).toBe(
       'claude-opus-4-6-thinking',
     )
+    expect(aliases['claude-opus-4-6-thinking-low']).toBe(
+      'claude-opus-4-6-thinking',
+    )
+    expect(aliases['claude-opus-4-6-thinking-medium']).toBe(
+      'claude-opus-4-6-thinking',
+    )
+    expect(aliases['claude-opus-4-6-thinking-high']).toBe(
+      'claude-opus-4-6-thinking',
+    )
+    expect(aliases['claude-opus-4-6-thinking-max']).toBe(
+      'claude-opus-4-6-thinking',
+    )
     expect(aliases['gemini-claude-sonnet-4-6-thinking-high']).toBe(
       'claude-sonnet-4-6',
     )
