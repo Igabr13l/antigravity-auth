@@ -4,6 +4,8 @@
 
 ### Added
 
+- Redesigned the OpenCode 2 TUI sidebar block: added a `▼ Antigravity` section header matching OpenCode's MCP aesthetic, replaced ambiguous ASCII glyphs (`*`, `~`, `-`) with single-width status glyphs (`●` active in blue, `○` ready, `◐` rate-limited in amber, `✕` ineligible in red, `⚠` validation in yellow, `⊝` disabled in gray), padded percentage columns so bars and countdowns align vertically, and added exact cooldown countdowns (`45s`, `1m 30s`).
+- Quota replenishment times are now rendered inline on any partially-consumed quota group (`(↻ <duration>)`), making it immediately obvious when each account will restore its quota rather than only showing a countdown when 0% exhausted.
 - The TUI sidebar and accounts dialog now show per-account quota (the OpenCode 1 adapter's design): remaining percentage per family (`Gemini 78%`, `Non-Gemini LOW 15%`), exhausted groups collapsed to `exhausted (resets <duration>)`, and an `active: <families>` marker on the account the pool currently dispatches to. Quota is fetched out-of-band per account (windowed summary with the legacy fallback), cached in memory for 2 minutes with in-flight dedupe and exponential error backoff (30s → 10min); access tokens and aggregates never touch the pool file.
 
 ### Fixed

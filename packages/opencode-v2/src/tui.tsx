@@ -47,6 +47,8 @@ import {
   isStableAccountKey,
   type PoolChange,
   type QuotaGroups,
+  type SidebarRow,
+  sidebarRows,
   summarizeAccountPool,
 } from './pool-status.ts'
 
@@ -590,12 +592,17 @@ function detailElement(status: AccountPoolStatus | undefined, now: number) {
   if (!status || status.accounts.length === 0) {
     return <text>AGY: no accounts</text>
   }
+  const rows: SidebarRow[] = [{ text: '▼ Antigravity', fg: '#94a3b8' }]
+  status.accounts.forEach((account, idx) => {
+    rows.push(...sidebarRows(account, now, activeFamiliesFor(status, account)))
+    if (idx < status.accounts.length - 1) {
+      rows.push({ text: ' ' })
+    }
+  })
   return (
     <box flexDirection='column'>
-      {status.accounts.map((account) => (
-        <text>
-          {formatAccountLine(account, now, activeFamiliesFor(status, account))}
-        </text>
+      {rows.map((row) => (
+        <text fg={row.fg}>{row.text}</text>
       ))}
     </box>
   )

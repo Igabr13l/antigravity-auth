@@ -310,6 +310,14 @@ const STATE_GLYPH: Record<AccountState, string> = {
   disabled: '-',
 }
 
+const SIDEBAR_GLYPH: Record<AccountState, string> = {
+  ready: '○',
+  'rate-limited': '◐',
+  ineligible: '✕',
+  verification: '⚠',
+  disabled: '⊝',
+}
+
 /**
  * Pure merge of cached quota aggregates into a summarized pool. Quota is
  * fetched out-of-band (network, cached in memory) and joined by the stable
@@ -344,6 +352,21 @@ export function formatResetIn(
   const hours = Math.floor(minutes / 60)
   const rest = minutes % 60
   return rest > 0 ? `${hours}h ${rest}m` : `${hours}h`
+}
+
+/** Format a remaining cooldown timestamp as a compact duration (e.g. `45s`, `1m 20s`, `15m`). */
+export function formatCooldown(until: number, now: number): string {
+  const ms = Math.max(0, until - now)
+  const totalSeconds = Math.ceil(ms / 1000)
+  if (totalSeconds < 60) return `${totalSeconds}s`
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  if (minutes < 60) {
+    return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`
+  }
+  const hours = Math.floor(minutes / 60)
+  const restMinutes = minutes % 60
+  return restMinutes > 0 ? `${hours}h ${restMinutes}m` : `${hours}h`
 }
 
 /**
@@ -409,6 +432,113 @@ export function formatAccountLine(
   const active = activeFamilies.join('/')
   if (active) parts.push(`active: ${active}`)
   return `${glyph} ${id} ${parts.join(' · ')}`
+}
+
+// ============================================================================
+// Sidebar block rendering — visual per-account rows for the OpenTUI sidebar
+// ============================================================================
+
+/** A colored text row for the sidebar block. */
+export interface SidebarRow {
+  readonly text: string
+  /** OpenTUI foreground color (hex); undefined = terminal default. */
+  readonly fg?: string
+}
+
+const BAR_WIDTH = 10
+const BAR_FILLED = '█'
+const BAR_EMPTY = '░'
+const GREEN = '#22c55e'
+const YELLOW = '#eab308'
+const RED = '#ef4444'
+const ACTIVE_BLUE = '#38bdf8'
+
+/** The glyph that marks the account each family is currently dispatching to. */
+const ACTIVE_GLYPH = '●'
+
+export function quotaBar(fraction: number, width = BAR_WIDTH): string {
+  const clamped = Math.max(0, Math.min(1, fraction))
+  const filled = Math.round(clamped * width)
+  return (
+    BAR_FILLED.repeat(filled) + BAR_EMPTY.repeat(Math.max(0, width - filled))
+  )
+}
+
+export function quotaBarColor(fraction: number): string {
+  const clamped = Math.max(0, Math.min(1, fraction))
+  if (clamped >= 0.5) return GREEN
+  if (clamped >= 0.2) return YELLOW
+  return RED
+}
+
+export function accountStateColor(
+  state: AccountState,
+  isActive: boolean,
+): string {
+  if (isActive) return ACTIVE_BLUE
+  switch (state) {
+    case 'ready':
+      return '#94a3b8'
+    case 'rate-limited':
+      return '#fbbf24'
+    case 'ineligible':
+      return '#ef4444'
+    case 'verification':
+      return '#facc15'
+    case 'disabled':
+      return '#64748b'
+  }
+}
+
+/**
+ * Rows for one account's sidebar block: an identity line (with the active
+ * marker and any non-ready state) followed by one colored bar line per family
+ * with usable quota data. Designed for a narrow sidebar — every row stays
+ * short instead of wrapping. Non-ready states keep their word; a READY account
+ * shows no state word (the bar is the information).
+ */
+export function sidebarRows(
+  account: AccountStatus,
+  now: number,
+  activeFamilies: readonly string[] = [],
+): SidebarRow[] {
+  const isActive = activeFamilies.length > 0
+  const glyph = isActive ? ACTIVE_GLYPH : SIDEBAR_GLYPH[account.state]
+  let identity = `${glyph} ${displayAccountId(account)}`
+  if (account.state === 'rate-limited') {
+    const cooldown = formatCooldown(account.cooldownUntil, now)
+    identity += ` · Cooldown ${cooldown}`
+  } else if (account.state === 'ineligible') {
+    identity += ' · INELIGIBLE'
+  } else if (account.state === 'verification') {
+    identity += ' · VALIDATION REQUIRED'
+  } else if (account.state === 'disabled') {
+    identity += ' · DISABLED'
+  }
+
+  const rows: SidebarRow[] = [
+    { text: identity, fg: accountStateColor(account.state, isActive) },
+  ]
+  for (const [family, label] of [
+    ['gemini', 'G'],
+    ['non-gemini', 'C'],
+  ] as const) {
+    const remaining = account.quota?.[family]?.remainingFraction
+    if (typeof remaining !== 'number' || !Number.isFinite(remaining)) continue
+    const clamped = Math.max(0, Math.min(1, remaining))
+    const percent = Math.round(clamped * 100)
+    const resetIn = formatResetIn(account.quota?.[family]?.resetTime, now)
+    const suffix = resetIn
+      ? ` (↻ ${resetIn})`
+      : clamped <= 0
+        ? ' (exhausted)'
+        : ''
+    rows.push({
+      text: `  ${label} ${quotaBar(clamped)} ${String(percent).padStart(3)}%${suffix}`,
+      fg: quotaBarColor(clamped),
+    })
+  }
+  return rows
 }
 
 /**

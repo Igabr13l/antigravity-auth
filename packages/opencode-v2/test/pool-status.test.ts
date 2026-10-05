@@ -4,12 +4,17 @@ import type { AccountStorageV4 } from '@cortexkit/antigravity-auth-core'
 
 import {
   accountKey,
+  accountStateColor,
   attachQuota,
   diffAccountPoolStatus,
   formatAccountLine,
+  formatCooldown,
   formatPoolSummaryLine,
   formatQuotaParts,
   maskEmail,
+  quotaBar,
+  quotaBarColor,
+  sidebarRows,
   summarizeAccountPool,
 } from '../src/pool-status.ts'
 
@@ -465,5 +470,115 @@ describe('formatting', () => {
     expect(formatAccountLine(withQuota.accounts[1]!, NOW)).toBe(
       '- b***@example.test DISABLED',
     )
+  })
+  test('draws quota bars clamped to the width', () => {
+    expect(quotaBar(0.61)).toBe('██████░░░░')
+    expect(quotaBar(0)).toBe('░░░░░░░░░░')
+    expect(quotaBar(1)).toBe('██████████')
+    expect(quotaBar(2)).toBe('██████████')
+  })
+
+  test('colors bars by remaining health', () => {
+    expect(quotaBarColor(0.61)).toBe('#22c55e')
+    expect(quotaBarColor(0.3)).toBe('#eab308')
+    expect(quotaBarColor(0.05)).toBe('#ef4444')
+  })
+
+  test('formats cooldown durations compactly with exact seconds when under one minute', () => {
+    expect(formatCooldown(NOW + 45_000, NOW)).toBe('45s')
+    expect(formatCooldown(NOW + 90_000, NOW)).toBe('1m 30s')
+    expect(formatCooldown(NOW + 120_000, NOW)).toBe('2m')
+    expect(formatCooldown(NOW + 3_600_000 * 2 + 15 * 60_000, NOW)).toBe(
+      '2h 15m',
+    )
+  })
+
+  test('resolves account state colors', () => {
+    expect(accountStateColor('ready', true)).toBe('#38bdf8')
+    expect(accountStateColor('ready', false)).toBe('#94a3b8')
+    expect(accountStateColor('rate-limited', false)).toBe('#fbbf24')
+    expect(accountStateColor('disabled', false)).toBe('#64748b')
+    expect(accountStateColor('ineligible', false)).toBe('#ef4444')
+  })
+
+  test('sidebar rows: identity line with the active marker and colored bars', () => {
+    const status = summarizeAccountPool(
+      pool([
+        { email: 'a@example.test' },
+        { email: 'b@example.test', enabled: false },
+      ]),
+      NOW,
+    )
+    const withQuota = attachQuota(
+      status,
+      new Map([
+        [
+          status.accounts[0]!.key,
+          {
+            gemini: { remainingFraction: 0.61, modelCount: 3 },
+            'non-gemini': { remainingFraction: 0.15, modelCount: 2 },
+          },
+        ],
+      ]),
+    )
+    expect(
+      sidebarRows(withQuota.accounts[0]!, NOW, ['claude', 'gemini']),
+    ).toEqual([
+      { text: '● a***@example.test', fg: '#38bdf8' },
+      { text: '  G ██████░░░░  61%', fg: '#22c55e' },
+      { text: '  C ██░░░░░░░░  15%', fg: '#ef4444' },
+    ])
+    expect(sidebarRows(withQuota.accounts[1]!, NOW)).toEqual([
+      { text: '⊝ b***@example.test · DISABLED', fg: '#64748b' },
+    ])
+  })
+
+  test('sidebar rows: shows reset time on partial quotas and exhausted groups', () => {
+    const status = summarizeAccountPool(
+      pool([
+        { email: 'a@example.test', enabled: true },
+        {
+          email: 'b@example.test',
+          enabled: true,
+          coolingDownUntil: NOW + 45_000,
+        },
+      ]),
+      NOW,
+    )
+    const reset = new Date(NOW + 59 * 60 * 60 * 1000).toISOString()
+    const partialReset = new Date(
+      NOW + 2 * 60 * 60 * 1000 + 15 * 60_000,
+    ).toISOString()
+    const withQuota = attachQuota(
+      status,
+      new Map([
+        [
+          status.accounts[0]!.key,
+          {
+            gemini: {
+              remainingFraction: 0.61,
+              resetTime: partialReset,
+              modelCount: 3,
+            },
+            'non-gemini': { remainingFraction: 1, modelCount: 2 },
+          },
+        ],
+        [
+          status.accounts[1]!.key,
+          { gemini: { remainingFraction: 0, resetTime: reset, modelCount: 3 } },
+        ],
+      ]),
+    )
+    expect(
+      sidebarRows(withQuota.accounts[0]!, NOW, ['claude', 'gemini']),
+    ).toEqual([
+      { text: '● a***@example.test', fg: '#38bdf8' },
+      { text: '  G ██████░░░░  61% (↻ 2h 15m)', fg: '#22c55e' },
+      { text: '  C ██████████ 100%', fg: '#22c55e' },
+    ])
+    expect(sidebarRows(withQuota.accounts[1]!, NOW)).toEqual([
+      { text: '◐ b***@example.test · Cooldown 45s', fg: '#fbbf24' },
+      { text: '  G ░░░░░░░░░░   0% (↻ 59h)', fg: '#ef4444' },
+    ])
   })
 })
