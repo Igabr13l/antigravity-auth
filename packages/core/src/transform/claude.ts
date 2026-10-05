@@ -53,10 +53,14 @@ export function isClaudeModel(model: string): boolean {
 export function isClaudeThinkingModel(model: string): boolean {
   const lower = model.toLowerCase()
   // Native AGY names Sonnet 4.6 without a `-thinking` suffix even though the
-  // route always uses signed thinking with a fixed 1024-token budget.
+  // route always uses signed thinking with a fixed 1024-token budget. The
+  // Claude 5.5 wire models (claude-{opus,sonnet}-5-5-{low,medium,high}) follow
+  // the same pattern: the tier is encoded in the id and thinking is always on.
   return (
     lower.includes('claude') &&
-    (lower.includes('thinking') || lower.endsWith('claude-sonnet-4-6'))
+    (lower.includes('thinking') ||
+      lower.endsWith('claude-sonnet-4-6') ||
+      /^claude-(opus|sonnet)-5-5-/.test(lower))
   )
 }
 

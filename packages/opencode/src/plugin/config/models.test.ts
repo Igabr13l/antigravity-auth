@@ -16,7 +16,9 @@ describe('OPENCODE_MODEL_DEFINITIONS', () => {
 
     expect(modelNames).toEqual([
       'antigravity-claude-opus-4-6-thinking',
+      'antigravity-claude-opus-5-5-thinking',
       'antigravity-claude-sonnet-4-6-thinking',
+      'antigravity-claude-sonnet-5-5-thinking',
       'antigravity-gemini-3.1-flash-image',
       'antigravity-gemini-3.1-pro',
       'antigravity-gemini-3.5-flash',
@@ -79,6 +81,21 @@ describe('OPENCODE_MODEL_DEFINITIONS', () => {
       {
         low: { disabled: true },
         high: { disabled: true },
+      },
+    )
+  })
+
+  it('exposes selectable thinking tiers for the Claude 5.5 models', () => {
+    expect(getModel('antigravity-claude-opus-5-5-thinking').variants).toEqual({
+      low: { thinkingConfig: { thinkingBudget: 8192 } },
+      medium: { thinkingConfig: { thinkingBudget: 16384 } },
+      high: { thinkingConfig: { thinkingBudget: 32768 } },
+    })
+    expect(getModel('antigravity-claude-sonnet-5-5-thinking').variants).toEqual(
+      {
+        low: { thinkingConfig: { thinkingBudget: 8192 } },
+        medium: { thinkingConfig: { thinkingBudget: 16384 } },
+        high: { thinkingConfig: { thinkingBudget: 32768 } },
       },
     )
   })

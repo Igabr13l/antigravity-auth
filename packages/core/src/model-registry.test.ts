@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test'
 
 import {
+  getClaudeOpus55Model,
+  getClaudeSonnet55Model,
   getGemini35FlashAntigravityModel,
   getGemini35FlashGeminiCliFallbackModel,
   getGemini36FlashAntigravityModel,
@@ -30,7 +32,9 @@ describe('model registry', () => {
 
     expect(modelNames).toEqual([
       'antigravity-claude-opus-4-6-thinking',
+      'antigravity-claude-opus-5-5-thinking',
       'antigravity-claude-sonnet-4-6-thinking',
+      'antigravity-claude-sonnet-5-5-thinking',
       'antigravity-gemini-3.1-flash-image',
       'antigravity-gemini-3.1-pro',
       'antigravity-gemini-3.5-flash',
@@ -94,6 +98,29 @@ describe('model registry', () => {
       'gemini-3.8-flash-medium',
     )
     expect(getGemini38FlashAntigravityModel('low')).toBe('gemini-3.8-flash-low')
+  })
+
+  it('preserves live Claude 5.5 route mappings', () => {
+    expect(getClaudeOpus55Model()).toBe('claude-opus-5-5-medium')
+    expect(getClaudeOpus55Model('low')).toBe('claude-opus-5-5-low')
+    expect(getClaudeOpus55Model('medium')).toBe('claude-opus-5-5-medium')
+    expect(getClaudeOpus55Model('high')).toBe('claude-opus-5-5-high')
+
+    expect(getClaudeSonnet55Model()).toBe('claude-sonnet-5-5-medium')
+    expect(getClaudeSonnet55Model('low')).toBe('claude-sonnet-5-5-low')
+    expect(getClaudeSonnet55Model('medium')).toBe('claude-sonnet-5-5-medium')
+    expect(getClaudeSonnet55Model('high')).toBe('claude-sonnet-5-5-high')
+  })
+
+  it('exposes tiered Claude 5.5 models with selectable variants', () => {
+    const opus =
+      getPublicModelDefinitions()['antigravity-claude-opus-5-5-thinking']
+    expect(opus?.name).toBe('Claude Opus 5.5 (Thinking)')
+    expect(opus?.variants).toEqual({
+      low: { thinkingConfig: { thinkingBudget: 8192 } },
+      medium: { thinkingConfig: { thinkingBudget: 16384 } },
+      high: { thinkingConfig: { thinkingBudget: 32768 } },
+    })
   })
 
   it('keeps resolver aliases for supported agy CLI variants', () => {

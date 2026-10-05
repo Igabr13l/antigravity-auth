@@ -166,6 +166,34 @@ const ALL_MODEL_DEFINITIONS: OpencodeModelDefinitions = {
       },
     },
   ),
+  'antigravity-claude-opus-5-5-thinking': defineModel(
+    'antigravity-claude-opus-5-5-thinking',
+    {
+      name: 'Claude Opus 5.5 (Thinking)',
+      reasoning: true,
+      limit: { context: 250000, output: 64000 },
+      modalities: DEFAULT_MODALITIES,
+      variants: {
+        low: { thinkingConfig: { thinkingBudget: 8192 } },
+        medium: { thinkingConfig: { thinkingBudget: 16384 } },
+        high: { thinkingConfig: { thinkingBudget: 32768 } },
+      },
+    },
+  ),
+  'antigravity-claude-sonnet-5-5-thinking': defineModel(
+    'antigravity-claude-sonnet-5-5-thinking',
+    {
+      name: 'Claude Sonnet 5.5 (Thinking)',
+      reasoning: true,
+      limit: { context: 250000, output: 64000 },
+      modalities: DEFAULT_MODALITIES,
+      variants: {
+        low: { thinkingConfig: { thinkingBudget: 8192 } },
+        medium: { thinkingConfig: { thinkingBudget: 16384 } },
+        high: { thinkingConfig: { thinkingBudget: 32768 } },
+      },
+    },
+  ),
   'antigravity-gemini-3.1-flash-image': defineModel(
     'antigravity-gemini-3.1-flash-image',
     {
@@ -320,11 +348,45 @@ const GEMINI_38_FLASH_ROUTES: AntigravityTieredRouteMetadata = {
   },
 }
 
+/**
+ * Antigravity retired the untiered Claude 4.6 routes and replaced them with
+ * tiered Claude 5.5 wire models (the tier is part of the model id). These route
+ * tables are the source of truth for both the legacy 4.6 aliases and the new
+ * 5.5 model ids exposed to OpenCode.
+ */
+const CLAUDE_OPUS_55_ROUTES: AntigravityTieredRouteMetadata = {
+  defaultModel: 'claude-opus-5-5-medium',
+  byTier: {
+    low: 'claude-opus-5-5-low',
+    medium: 'claude-opus-5-5-medium',
+    high: 'claude-opus-5-5-high',
+  },
+}
+
+const CLAUDE_SONNET_55_ROUTES: AntigravityTieredRouteMetadata = {
+  defaultModel: 'claude-sonnet-5-5-medium',
+  byTier: {
+    low: 'claude-sonnet-5-5-low',
+    medium: 'claude-sonnet-5-5-medium',
+    high: 'claude-sonnet-5-5-high',
+  },
+}
+
 const QUOTA_GROUP_BY_MODEL_ID: Record<string, ModelQuotaGroup> = {
   'claude-opus-4-6-thinking': 'non-gemini',
   'claude-opus-4-6': 'non-gemini',
   'claude-sonnet-4-6-thinking': 'non-gemini',
   'claude-sonnet-4-6': 'non-gemini',
+  'claude-opus-5-5': 'non-gemini',
+  'claude-opus-5-5-low': 'non-gemini',
+  'claude-opus-5-5-medium': 'non-gemini',
+  'claude-opus-5-5-high': 'non-gemini',
+  'claude-opus-5-5-thinking': 'non-gemini',
+  'claude-sonnet-5-5': 'non-gemini',
+  'claude-sonnet-5-5-low': 'non-gemini',
+  'claude-sonnet-5-5-medium': 'non-gemini',
+  'claude-sonnet-5-5-high': 'non-gemini',
+  'claude-sonnet-5-5-thinking': 'non-gemini',
   'gemini-pro-agent': 'gemini',
   'gemini-3.1-pro': 'gemini',
   'gemini-3.1-pro-low': 'gemini',
@@ -358,6 +420,8 @@ const ANTIGRAVITY_OPENCODE_MODEL_IDS = [
   'antigravity-gemini-3.1-pro',
   'antigravity-claude-sonnet-4-6-thinking',
   'antigravity-claude-opus-4-6-thinking',
+  'antigravity-claude-sonnet-5-5-thinking',
+  'antigravity-claude-opus-5-5-thinking',
   'antigravity-gemini-3.1-flash-image',
   'antigravity-gpt-oss-120b-medium',
 ] as const
@@ -417,6 +481,16 @@ export function getGemini37FlashAntigravityModel(tier?: ThinkingTier): string {
 
 export function getGemini38FlashAntigravityModel(tier?: ThinkingTier): string {
   return getTieredAntigravityModel(GEMINI_38_FLASH_ROUTES, tier)
+}
+
+/** Wire model for Claude Opus 5.5, tiered low/medium/high (default medium). */
+export function getClaudeOpus55Model(tier?: ThinkingTier): string {
+  return getTieredAntigravityModel(CLAUDE_OPUS_55_ROUTES, tier)
+}
+
+/** Wire model for Claude Sonnet 5.5, tiered low/medium/high (default medium). */
+export function getClaudeSonnet55Model(tier?: ThinkingTier): string {
+  return getTieredAntigravityModel(CLAUDE_SONNET_55_ROUTES, tier)
 }
 
 export function getQuotaGroupForModel(

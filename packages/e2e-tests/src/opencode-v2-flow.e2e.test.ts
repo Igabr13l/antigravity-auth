@@ -135,7 +135,7 @@ describe('OpenCode 2 host flow', () => {
     harness = await createOpenCodeV2Harness('tool-roundtrip')
 
     const result = await harness.run(
-      'google/claude-sonnet-4-6-thinking',
+      'google/claude-sonnet-5-5-thinking',
       'Read README.md, then reply with the exact text E2E_OK.',
     )
 
@@ -146,7 +146,7 @@ describe('OpenCode 2 host flow', () => {
     const routed = harness.requests.filter(
       (request) =>
         request.path === '/agy/primary' &&
-        asRecord(request.body).model === 'claude-sonnet-4-6',
+        asRecord(request.body).model === 'claude-sonnet-5-5-medium',
     )
     expect(routed).toHaveLength(2)
     const continuationRequest = asRecord(asRecord(routed[1]?.body).request)
@@ -167,7 +167,7 @@ describe('OpenCode 2 host flow', () => {
     harness = await createOpenCodeV2Harness()
 
     const result = await harness.run(
-      'google/claude-sonnet-4-6-thinking',
+      'google/claude-sonnet-5-5-thinking',
       'Reply with the exact text E2E_OK.',
     )
 
@@ -179,10 +179,10 @@ describe('OpenCode 2 host flow', () => {
       harness.requests.find(
         (request) =>
           request.path === '/agy/primary' &&
-          asRecord(request.body).model === 'claude-sonnet-4-6',
+          asRecord(request.body).model === 'claude-sonnet-5-5-medium',
       )?.body,
     )
-    expect(envelope.model).toBe('claude-sonnet-4-6')
+    expect(envelope.model).toBe('claude-sonnet-5-5-medium')
     const request = asRecord(envelope.request)
     const generationConfig = asRecord(request.generationConfig)
     expect(generationConfig.thinkingConfig).toEqual({

@@ -241,6 +241,8 @@ export const ROUTABLE_MODEL_IDS: ReadonlySet<string> = new Set([
   'gemini-3.1-flash-image',
   'claude-sonnet-4-6-thinking',
   'claude-opus-4-6-thinking',
+  'claude-sonnet-5-5-thinking',
+  'claude-opus-5-5-thinking',
   'gpt-oss-120b-medium',
 ])
 

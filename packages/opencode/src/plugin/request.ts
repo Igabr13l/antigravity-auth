@@ -211,7 +211,11 @@ function getAgyMaxOutputTokens(model: string): number | undefined {
   if (lower === 'gemini-3.1-pro-low' || lower === 'gemini-pro-agent') {
     return 65535
   }
-  if (lower === 'claude-sonnet-4-6' || lower === 'claude-opus-4-6-thinking') {
+  if (
+    lower === 'claude-sonnet-4-6' ||
+    lower === 'claude-opus-4-6-thinking' ||
+    /^claude-(opus|sonnet)-5-5-(low|medium|high)$/.test(lower)
+  ) {
     return 64000
   }
   if (lower === 'gpt-oss-120b-medium') {
@@ -1658,8 +1662,25 @@ export function prepareAntigravityRequest(
                   ? 'medium'
                   : 'high'
             tierThinkingBudget = undefined
+          } else if (/claude-(opus|sonnet)-(?:4-6|5-5)/i.test(effectiveModel)) {
+            // Claude 5.5 (and the retired 4.6 aliases) encode the thinking tier
+            // in the wire model id, so the selected variant re-resolves to a
+            // distinct model instead of only adjusting a numeric budget.
+            const claudeTier: 'low' | 'medium' | 'high' =
+              variantConfig.thinkingBudget <= 8192
+                ? 'low'
+                : variantConfig.thinkingBudget <= 16384
+                  ? 'medium'
+                  : 'high'
+            const variantResolved = resolveModelForHeaderStyle(
+              `${rawModel.replace(/-(minimal|low|medium|high)$/i, '')}-${claudeTier}`,
+              headerStyle,
+            )
+            effectiveModel = variantResolved.actualModel
+            tierThinkingBudget = variantResolved.thinkingBudget
+            tierThinkingLevel = variantResolved.thinkingLevel
           } else {
-            // Claude / Gemini 2.5 - use budget directly
+            // Claude (legacy) / Gemini 2.5 - use budget directly
             tierThinkingBudget = variantConfig.thinkingBudget
             tierThinkingLevel = undefined
           }

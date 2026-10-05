@@ -64,6 +64,22 @@
           "capabilities": { "tools": true, "input": ["text", "image", "pdf"], "output": ["text"] },
           "limit": { "context": 250000, "output": 64000 }
         },
+        "claude-sonnet-5-5-thinking": {
+          "name": "Claude Sonnet 5.5 (Thinking)",
+          "modelID": "claude-sonnet-5-5-thinking",
+          "package": "@opencode-ai/ai/providers/google",
+          "capabilities": { "tools": true, "input": ["text", "image", "pdf"], "output": ["text"] },
+          "limit": { "context": 250000, "output": 64000 },
+          "variants": [{ "id": "low" }, { "id": "medium" }, { "id": "high" }]
+        },
+        "claude-opus-5-5-thinking": {
+          "name": "Claude Opus 5.5 (Thinking)",
+          "modelID": "claude-opus-5-5-thinking",
+          "package": "@opencode-ai/ai/providers/google",
+          "capabilities": { "tools": true, "input": ["text", "image", "pdf"], "output": ["text"] },
+          "limit": { "context": 250000, "output": 64000 },
+          "variants": [{ "id": "low" }, { "id": "medium" }, { "id": "high" }]
+        },
         "gpt-oss-120b-medium": {
           "name": "GPT-OSS 120B",
           "modelID": "gpt-oss-120b-medium",

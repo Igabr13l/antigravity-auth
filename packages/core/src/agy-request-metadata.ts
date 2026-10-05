@@ -16,6 +16,13 @@ const AGY_REQUEST_FIELD_ORDER = [
   'sessionId',
 ] as const
 
+/**
+ * Maps an Antigravity wire model id to the `model_enum` label sent in the
+ * request labels. The label is telemetry only: routing is driven by the
+ * envelope `model` field, so a missing entry simply omits the label. The
+ * Claude 5.5 wire models (`claude-{opus,sonnet}-5-5-{low,medium,high}`) have no
+ * captured placeholder yet, so they intentionally fall through to `undefined`.
+ */
 const AGY_MODEL_ENUM_BY_WIRE_MODEL: Readonly<Record<string, string>> = {
   'gemini-3.5-flash-extra-low': 'MODEL_PLACEHOLDER_M187',
   'gemini-3.5-flash-low': 'MODEL_PLACEHOLDER_M20',

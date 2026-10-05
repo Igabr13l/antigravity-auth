@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Changed
+
+- Added Claude Opus 5.5 and Claude Sonnet 5.5 (`antigravity-claude-opus-5-5-thinking`, `antigravity-claude-sonnet-5-5-thinking`) with selectable `low`/`medium`/`high` thinking tiers, and mapped the retired Claude 4.6 routes to the 5.5 wire models. Antigravity now serves `claude-{opus,sonnet}-5-5-{low,medium,high}` as distinct models; the previous untiered `claude-opus-4-6-thinking` / `claude-sonnet-4-6` requests returned "Claude Opus 4.6 is no longer available. Please switch to Claude Opus 5.5." The tier chosen by a variant now selects the wire model (previously a Claude variant only adjusted a numeric thinking budget that the API rejected), and the 4.6 ids remain as working aliases.
+
 ## [2.3.0] - 2026-09-17
 
 ### Added

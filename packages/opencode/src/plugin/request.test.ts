@@ -2313,8 +2313,8 @@ describe('request.ts', () => {
           'antigravity',
         )
         const wrapped = JSON.parse(result.init.body as string)
-        expect(result.effectiveModel).toBe('claude-sonnet-4-6')
-        expect(wrapped.model).toBe('claude-sonnet-4-6')
+        expect(result.effectiveModel).toBe('claude-sonnet-5-5-medium')
+        expect(wrapped.model).toBe('claude-sonnet-5-5-medium')
         expect(wrapped.request.generationConfig.thinkingConfig).toEqual({
           includeThoughts: true,
           thinkingBudget: 1024,
@@ -2373,7 +2373,7 @@ describe('request.ts', () => {
 
         const wrapped = JSON.parse(result.init.body as string)
         const serialized = JSON.stringify(wrapped.request)
-        expect(result.effectiveModel).toBe('claude-opus-4-6-thinking')
+        expect(result.effectiveModel).toBe('claude-opus-5-5-medium')
         expect(result.needsSignedThinkingWarmup).toBe(false)
         expect(wrapped.request.generationConfig.thinkingConfig).toEqual({
           includeThoughts: true,

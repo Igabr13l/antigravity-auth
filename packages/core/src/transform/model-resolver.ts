@@ -6,6 +6,8 @@
  */
 
 import {
+  getClaudeOpus55Model,
+  getClaudeSonnet55Model,
   getGemini35FlashAntigravityModel,
   getGemini35FlashGeminiCliFallbackModel,
   getGemini36FlashAntigravityModel,
@@ -316,6 +318,30 @@ export function resolveModelWithTier(
     }
   }
 
+  // Claude 5.5 replaced the untiered Claude 4.6 routes: Antigravity now exposes
+  // `claude-{opus,sonnet}-5-5-{low,medium,high}` as distinct wire models, so the
+  // thinking tier selects the actual model. Resolve both the new 5.5 ids and the
+  // retired 4.6 ids (which transparently map to 5.5) to the tiered wire model.
+  const claude55Match = /^claude-(opus|sonnet)-(?:4-6|5-5)/i.exec(resolvedModel)
+  if (claude55Match && quotaPreference === 'antigravity') {
+    const family = claude55Match[1]!.toLowerCase()
+    const suffixTier = resolvedModel.match(TIER_REGEX)?.[1] as
+      | ThinkingTier
+      | undefined
+    const selectedTier: ThinkingTier = tier ?? suffixTier ?? 'medium'
+    return {
+      actualModel:
+        family === 'sonnet'
+          ? getClaudeSonnet55Model(selectedTier)
+          : getClaudeOpus55Model(selectedTier),
+      thinkingBudget: 1024,
+      tier: selectedTier,
+      isThinkingModel: true,
+      quotaPreference,
+      explicitQuota,
+    }
+  }
+
   // Check if this is a Gemini 3 model (works for both aliased and skipAlias paths)
   const isEffectiveGemini3 = resolvedModel.toLowerCase().includes('gemini-3')
   const lowerModelWithoutQuota = modelWithoutQuota.toLowerCase()
@@ -556,6 +582,23 @@ export function resolveModelWithVariant(
       actualModel,
       thinkingLevel: level,
       thinkingBudget: undefined,
+      configSource: 'variant',
+    }
+  }
+
+  // Claude 5.5 encodes the thinking tier in the wire model id, so a variant
+  // budget selects the actual model instead of only adjusting the budget.
+  if (/^claude-(opus|sonnet)-5-5-/.test(base.actualModel)) {
+    const claudeTier: ThinkingTier =
+      budget <= 8192 ? 'low' : budget <= 16384 ? 'medium' : 'high'
+    const isSonnet = base.actualModel.includes('sonnet')
+    return {
+      ...base,
+      actualModel: isSonnet
+        ? getClaudeSonnet55Model(claudeTier)
+        : getClaudeOpus55Model(claudeTier),
+      tier: claudeTier,
+      thinkingBudget: base.thinkingBudget,
       configSource: 'variant',
     }
   }
