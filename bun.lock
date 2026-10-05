@@ -19,7 +19,7 @@
     },
     "packages/core": {
       "name": "@cortexkit/antigravity-auth-core",
-      "version": "2.2.2",
+      "version": "2.2.3",
       "dependencies": {
         "xdg-basedir": "^5.1.0",
         "zod": "^4.0.0",
@@ -41,12 +41,12 @@
     },
     "packages/opencode": {
       "name": "@cortexkit/opencode-antigravity-auth",
-      "version": "2.2.2",
+      "version": "2.2.3",
       "bin": {
         "antigravity-auth": "./dist/cli.js",
       },
       "dependencies": {
-        "@cortexkit/antigravity-auth-core": "2.2.1",
+        "@cortexkit/antigravity-auth-core": "2.2.3",
         "jsonc-parser": "^3.3.1",
         "xdg-basedir": "^5.1.0",
         "zod": "^4.0.0",
@@ -75,9 +75,9 @@
     },
     "packages/opencode-v2": {
       "name": "@cortexkit/opencode-v2-antigravity-auth",
-      "version": "2.2.2",
+      "version": "2.2.3",
       "dependencies": {
-        "@cortexkit/antigravity-auth-core": "2.2.1",
+        "@cortexkit/antigravity-auth-core": "2.2.3",
       },
       "devDependencies": {
         "@opencode-ai/plugin": "0.0.0-beta-19271",
@@ -98,9 +98,9 @@
     },
     "packages/pi": {
       "name": "@cortexkit/pi-antigravity-auth",
-      "version": "2.2.2",
+      "version": "2.2.3",
       "dependencies": {
-        "@cortexkit/antigravity-auth-core": "2.2.1",
+        "@cortexkit/antigravity-auth-core": "2.2.3",
       },
       "devDependencies": {
         "@earendil-works/pi-ai": "^0.79.1",

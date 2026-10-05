@@ -1,6 +1,6 @@
 {
   "name": "@cortexkit/opencode-v2-antigravity-auth",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "description": "Google Antigravity server adapter for OpenCode 2.x",
   "type": "module",
   "license": "MIT",
@@ -56,7 +56,7 @@
     "install:local": "bun run build && bun scripts/install-local.ts"
   },
   "dependencies": {
-    "@cortexkit/antigravity-auth-core": "2.2.2"
+    "@cortexkit/antigravity-auth-core": "2.2.3"
   },
   "peerDependencies": {
     "@opentui/core": ">=0.5.10",
