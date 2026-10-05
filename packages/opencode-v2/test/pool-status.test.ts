@@ -11,6 +11,7 @@ import {
   formatCooldown,
   formatPoolSummaryLine,
   formatQuotaParts,
+  formatResetIn,
   maskEmail,
   quotaBar,
   quotaBarColor,
@@ -578,7 +579,110 @@ describe('formatting', () => {
     ])
     expect(sidebarRows(withQuota.accounts[1]!, NOW)).toEqual([
       { text: '◐ b***@example.test · Cooldown 45s', fg: '#fbbf24' },
-      { text: '  G ░░░░░░░░░░   0% (↻ 59h)', fg: '#ef4444' },
+      { text: '  G ░░░░░░░░░░   0% (↻ 2d 11h)', fg: '#ef4444' },
     ])
+  })
+
+  test('sidebar rows: renders one labeled bar per quota window', () => {
+    // Antigravity exposes each pool as a 5-hour and a weekly window. The
+    // sidebar previously collapsed to the most-constrained one, hiding the
+    // weekly column entirely.
+    const status = summarizeAccountPool(
+      pool([{ email: 'a@example.test' }]),
+      NOW,
+    )
+    const fiveHourReset = new Date(
+      NOW + 4 * 3_600_000 + 41 * 60_000,
+    ).toISOString()
+    const weeklyReset = new Date(NOW + 58 * 3_600_000).toISOString()
+    const withQuota = attachQuota(
+      status,
+      new Map([
+        [
+          status.accounts[0]!.key,
+          {
+            gemini: {
+              remainingFraction: 0.59,
+              resetTime: weeklyReset,
+              modelCount: 3,
+              windows: [
+                {
+                  window: '5h',
+                  remainingFraction: 0.95,
+                  resetTime: fiveHourReset,
+                },
+                {
+                  window: 'weekly',
+                  remainingFraction: 0.59,
+                  resetTime: weeklyReset,
+                },
+              ],
+            },
+            'non-gemini': {
+              remainingFraction: 0.95,
+              resetTime: fiveHourReset,
+              modelCount: 2,
+              windows: [
+                {
+                  window: '5h',
+                  remainingFraction: 0.95,
+                  resetTime: fiveHourReset,
+                },
+                {
+                  window: 'weekly',
+                  remainingFraction: 1,
+                  resetTime: weeklyReset,
+                },
+              ],
+            },
+          },
+        ],
+      ]),
+    )
+    expect(sidebarRows(withQuota.accounts[0]!, NOW)).toEqual([
+      { text: '○ a***@example.test', fg: '#94a3b8' },
+      { text: '  G 5h ██████████  95% (↻ 4h 41m)', fg: '#22c55e' },
+      { text: '    7d ██████░░░░  59% (↻ 2d 10h)', fg: '#22c55e' },
+      { text: '  C 5h ██████████  95% (↻ 4h 41m)', fg: '#22c55e' },
+      { text: '    7d ██████████ 100% (↻ 2d 10h)', fg: '#22c55e' },
+    ])
+  })
+
+  test('sidebar rows: mutes quota bars for a blocked or disabled account', () => {
+    // A cached green bar on a disabled account would read as "usable"; the bar
+    // takes the state color instead.
+    const status = summarizeAccountPool(
+      pool([{ email: 'a@example.test' }]),
+      NOW,
+    )
+    const withQuota = attachQuota(
+      status,
+      new Map([
+        [
+          status.accounts[0]!.key,
+          { gemini: { remainingFraction: 1, modelCount: 3 } },
+        ],
+      ]),
+    )
+    const disabled = { ...withQuota.accounts[0]!, state: 'disabled' as const }
+    expect(sidebarRows(disabled, NOW)).toEqual([
+      { text: '⊝ a***@example.test · DISABLED', fg: '#64748b' },
+      { text: '  G ██████████ 100%', fg: '#64748b' },
+    ])
+  })
+
+  test('formats multi-day resets in days', () => {
+    expect(
+      formatResetIn(new Date(NOW + 59 * 3_600_000).toISOString(), NOW),
+    ).toBe('2d 11h')
+    expect(
+      formatResetIn(
+        new Date(NOW + 167 * 3_600_000 + 40 * 60_000).toISOString(),
+        NOW,
+      ),
+    ).toBe('6d 23h')
+    expect(
+      formatResetIn(new Date(NOW + 7 * 24 * 3_600_000).toISOString(), NOW),
+    ).toBe('7d')
   })
 })

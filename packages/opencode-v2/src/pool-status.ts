@@ -337,7 +337,12 @@ export function attachQuota(
   }
 }
 
-/** Format an ISO reset time as a compact duration until reset (e.g. `2h 15m`). */
+/**
+ * Format an ISO reset time as a compact duration until reset. Keeps the
+ * finest useful unit: `45m`, `2h 15m`, and `2d 10h` once the wait crosses a
+ * day (a raw `167h 40m` is unreadable in a narrow sidebar, and the minute
+ * precision of a multi-day reset is noise).
+ */
 export function formatResetIn(
   resetTime: string | undefined,
   now: number,
@@ -351,7 +356,10 @@ export function formatResetIn(
   if (minutes < 60) return `${minutes}m`
   const hours = Math.floor(minutes / 60)
   const rest = minutes % 60
-  return rest > 0 ? `${hours}h ${rest}m` : `${hours}h`
+  if (hours < 24) return rest > 0 ? `${hours}h ${rest}m` : `${hours}h`
+  const days = Math.floor(hours / 24)
+  const restHours = hours % 24
+  return restHours > 0 ? `${days}d ${restHours}h` : `${days}d`
 }
 
 /** Format a remaining cooldown timestamp as a compact duration (e.g. `45s`, `1m 20s`, `15m`). */
@@ -456,6 +464,19 @@ const ACTIVE_BLUE = '#38bdf8'
 /** The glyph that marks the account each family is currently dispatching to. */
 const ACTIVE_GLYPH = '●'
 
+/**
+ * Short gutter for a quota window, so the 5-hour and weekly rows stay
+ * distinguishable at a glance. Unknown windows fall back to their raw name.
+ */
+const WINDOW_GUTTER: Record<string, string> = {
+  '5h': '5h',
+  weekly: '7d',
+}
+
+export function windowGutter(window: string): string {
+  return WINDOW_GUTTER[window] ?? window
+}
+
 export function quotaBar(fraction: number, width = BAR_WIDTH): string {
   const clamped = Math.max(0, Math.min(1, fraction))
   const filled = Math.round(clamped * width)
@@ -490,12 +511,58 @@ export function accountStateColor(
   }
 }
 
+function clampFraction(fraction: number): number {
+  return Math.max(0, Math.min(1, fraction))
+}
+
+/** ` (↻ 2d 10h)` for a live reset, ` (exhausted)` for a stale zero, else ''. */
+function resetSuffix(
+  clamped: number,
+  resetTime: string | undefined,
+  now: number,
+): string {
+  const resetIn = formatResetIn(resetTime, now)
+  if (resetIn) return ` (↻ ${resetIn})`
+  return clamped <= 0 ? ' (exhausted)' : ''
+}
+
+/**
+ * A blocked/disabled account keeps its cached quota visible for context, but a
+ * healthy green bar would read as "usable". Mute the bar to the state color
+ * unless the pool can actually dispatch to the account.
+ */
+function quotaBarTone(state: AccountState, clamped: number): string {
+  if (state === 'ready' || state === 'rate-limited') {
+    return quotaBarColor(clamped)
+  }
+  return accountStateColor(state, false)
+}
+
+function barRow(
+  prefix: string,
+  clamped: number,
+  suffix: string,
+  fg: string,
+): SidebarRow {
+  const percent = Math.round(clamped * 100)
+  return {
+    text: `${prefix} ${quotaBar(clamped)} ${String(percent).padStart(3)}%${suffix}`,
+    fg,
+  }
+}
+
 /**
  * Rows for one account's sidebar block: an identity line (with the active
- * marker and any non-ready state) followed by one colored bar line per family
- * with usable quota data. Designed for a narrow sidebar — every row stays
- * short instead of wrapping. Non-ready states keep their word; a READY account
- * shows no state word (the bar is the information).
+ * marker and any non-ready state) followed by one colored bar line per
+ * quota window. Antigravity exposes each pool as a 5-hour and a weekly window;
+ * showing both — the earlier code collapsed to the most-constrained one — is
+ * what makes the weekly column visible. The window gutter (`5h` / `7d`) labels
+ * each bar so a percentage is never mistaken for the wrong window. Legacy
+ * cached shapes with a single fraction render one unlabeled bar.
+ *
+ * Designed for a narrow sidebar — every row stays short instead of wrapping.
+ * Non-ready states keep their word; a READY account shows no state word (the
+ * bar is the information).
  */
 export function sidebarRows(
   account: AccountStatus,
@@ -523,20 +590,38 @@ export function sidebarRows(
     ['gemini', 'G'],
     ['non-gemini', 'C'],
   ] as const) {
-    const remaining = account.quota?.[family]?.remainingFraction
+    const group = account.quota?.[family]
+    const windows = group?.windows
+    if (windows && windows.length > 0) {
+      windows.forEach((entry, index) => {
+        const clamped = clampFraction(entry.remainingFraction)
+        const gutter = windowGutter(entry.window)
+        // Align bars in a column: the family label rides the first window,
+        // later windows indent under it by exactly one family column.
+        const prefix = index === 0 ? `  ${label} ${gutter}` : `    ${gutter}`
+        rows.push(
+          barRow(
+            prefix,
+            clamped,
+            resetSuffix(clamped, entry.resetTime, now),
+            quotaBarTone(account.state, clamped),
+          ),
+        )
+      })
+      continue
+    }
+
+    const remaining = group?.remainingFraction
     if (typeof remaining !== 'number' || !Number.isFinite(remaining)) continue
-    const clamped = Math.max(0, Math.min(1, remaining))
-    const percent = Math.round(clamped * 100)
-    const resetIn = formatResetIn(account.quota?.[family]?.resetTime, now)
-    const suffix = resetIn
-      ? ` (↻ ${resetIn})`
-      : clamped <= 0
-        ? ' (exhausted)'
-        : ''
-    rows.push({
-      text: `  ${label} ${quotaBar(clamped)} ${String(percent).padStart(3)}%${suffix}`,
-      fg: quotaBarColor(clamped),
-    })
+    const clamped = clampFraction(remaining)
+    rows.push(
+      barRow(
+        `  ${label}`,
+        clamped,
+        resetSuffix(clamped, group?.resetTime, now),
+        quotaBarTone(account.state, clamped),
+      ),
+    )
   }
   return rows
 }
