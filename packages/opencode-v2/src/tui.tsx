@@ -5,7 +5,7 @@
 // shared account pool (same file the server plugin rotates over):
 //
 // - `prompt.footer.status` slot: one-line pool summary under the prompt.
-// - `sidebar.footer` slot: per-account lines (READY / COOLDOWN / blocked).
+// - `sidebar.content` slot: per-account lines directly under MCP/Context.
 // - Toast notifications when the pool changes (ineligible, validation,
 //   cooldowns, enable/disable).
 // - A palette command (`Antigravity: accounts`) opening a dialog to inspect
@@ -623,7 +623,7 @@ export function createOpenCodeV2AntigravityTui(
       try {
         claims.push(
           ctx.ui.slot({
-            prepend: 'sidebar.footer',
+            append: 'sidebar.content',
             render: () => {
               // Both slots retry the bind: the layer needs a component scope,
               // so whichever surface the host mounts first wins. Binding from
@@ -636,6 +636,8 @@ export function createOpenCodeV2AntigravityTui(
                   dependencies.now(),
                   viewState.open ?? true,
                   toggleOpen,
+                  ctx.theme?.text?.base,
+                  ctx.theme?.text?.muted,
                 )
               } catch {
                 return 'AGY'
@@ -680,6 +682,8 @@ function detailElement(
   now: number,
   open: boolean = true,
   toggle?: () => void,
+  textBase: string = '#f8fafc',
+  textMuted: string = '#94a3b8',
 ) {
   if (!status || status.accounts.length === 0) {
     return <text>AGY: no accounts</text>
@@ -706,8 +710,10 @@ function detailElement(
     <box flexDirection='column'>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: opentui renders to a terminal, not the DOM — ARIA roles do not apply */}
       <box flexDirection='row' gap={1} onMouseDown={toggle} onMouseUp={toggle}>
-        <text fg='#94a3b8'>{glyph} Antigravity</text>
-        {!open && <text fg='#64748b'>({summary})</text>}
+        <text fg={textBase}>
+          {glyph} <b>Antigravity</b>
+        </text>
+        {!open && <text fg={textMuted}>({summary})</text>}
       </box>
       {open && (
         <box flexDirection='column'>

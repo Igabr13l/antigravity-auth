@@ -103,6 +103,12 @@ function stubContext() {
         layers.push(input())
       },
     },
+    theme: {
+      text: {
+        base: '#f8fafc',
+        muted: '#94a3b8',
+      },
+    },
   }
 
   return {
@@ -165,7 +171,7 @@ describe('OpenCode 2 Antigravity TUI plugin', () => {
 
     expect(claims.map((claim) => claim.target)).toEqual([
       'prompt.footer.status',
-      'sidebar.footer',
+      'sidebar.content',
     ])
     expect(toasts).toEqual([])
 
@@ -411,7 +417,7 @@ describe('OpenCode 2 Antigravity TUI plugin', () => {
     })
     const cleanup = await plugin.setup(harness.context as never)
 
-    expect(claims.map((claim) => claim.target)).toEqual(['sidebar.footer'])
+    expect(claims.map((claim) => claim.target)).toEqual(['sidebar.content'])
     claims[0]?.render({})
     expect(harness.layers).toHaveLength(1)
     expect(
@@ -802,7 +808,7 @@ describe('default quota fetcher', () => {
       loadPool: async () => current,
     })
 
-    const sidebarClaim = claims.find((c) => c.target === 'sidebar.footer')
+    const sidebarClaim = claims.find((c) => c.target === 'sidebar.content')
     expect(sidebarClaim).toBeDefined()
     expect(sidebarClaim?.render({})).toBeDefined()
 

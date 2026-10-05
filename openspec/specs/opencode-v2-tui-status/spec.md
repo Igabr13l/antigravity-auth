@@ -38,7 +38,7 @@ because consumers do not install `@opencode-ai/plugin`.
 ### Requirement: Pool status surfaces
 
 The plugin SHALL claim the `prompt.footer.status` slot with a one-line pool
-summary (`ready/total`, blocked and disabled counters) and the `sidebar.footer`
+summary (`ready/total`, blocked and disabled counters) and the `sidebar.content`
 slot with one line per account showing its state (READY, COOLDOWN with
 remaining minutes and family, INELIGIBLE, VALIDATION REQUIRED, DISABLED).
 Accounts SHALL be identified by masked email (first local character plus
@@ -352,7 +352,7 @@ later renders until it succeeds once.
 #### Scenario: Prompt-footer slot unavailable
 
 - **WHEN** the host rejects the `prompt.footer.status` claim but mounts
-  `sidebar.footer`
+  `sidebar.content`
 - **THEN** rendering the sidebar registers the keymap layer and the accounts
   command remains reachable
 
