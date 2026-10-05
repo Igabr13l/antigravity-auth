@@ -23,6 +23,7 @@ import {
   type AgyRequestScope,
   AgyRequestSessionStore,
   ANTIGRAVITY_ENDPOINT_FALLBACKS,
+  ANTIGRAVITY_ENDPOINT_PROD,
   type AntigravityTokenExchangeResult,
   applyClaudeTransforms,
   authorizeAntigravity,
@@ -248,6 +249,19 @@ export const ROUTABLE_MODEL_IDS: ReadonlySet<string> = new Set([
 
 function familyFor(modelID: string): 'claude' | 'gemini' {
   return getModelFamily(modelID) === 'claude' ? 'claude' : 'gemini'
+}
+
+/**
+ * The quota pool an endpoint draws from. The daily host serves the Antigravity
+ * (agy CLI) pool; the production host is the Gemini CLI endpoint and draws
+ * from a separate pool. Recording a rate limit under the wrong pool is what
+ * made a single 429 from the production fallback block an account whose
+ * Antigravity quota was still available.
+ */
+export function quotaStyleForEndpoint(
+  endpoint: string,
+): 'antigravity' | 'gemini-cli' {
+  return endpoint === ANTIGRAVITY_ENDPOINT_PROD ? 'gemini-cli' : 'antigravity'
 }
 
 function requestedModel(modelID: string, variant?: string): string {
@@ -987,7 +1001,7 @@ export function createOpenCodeV2AntigravityPlugin(
               manager.markRateLimitedWithReason(
                 account,
                 family,
-                'antigravity',
+                quotaStyleForEndpoint(endpoint),
                 requested,
                 'MODEL_CAPACITY_EXHAUSTED',
                 45_000,
@@ -1004,7 +1018,7 @@ export function createOpenCodeV2AntigravityPlugin(
               manager.markRateLimitedWithReason(
                 account,
                 family,
-                'antigravity',
+                quotaStyleForEndpoint(endpoint),
                 requested,
                 limit,
                 retryAfterMs(response) ?? parseResetDelayMs(message) ?? 60_000,

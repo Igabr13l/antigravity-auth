@@ -7,6 +7,7 @@ import type { SessionHttpRequest } from '@opencode-ai/plugin/promise/session'
 import plugin, {
   createOpenCodeV2AntigravityPlugin,
   parseResetDelayMs,
+  quotaStyleForEndpoint,
   upsertOAuthAccount,
 } from '../src/plugin.ts'
 
@@ -353,5 +354,23 @@ describe('parseResetDelayMs', () => {
     ).toBeUndefined()
     expect(parseResetDelayMs('')).toBeUndefined()
     expect(parseResetDelayMs(undefined)).toBeUndefined()
+  })
+})
+
+describe('quotaStyleForEndpoint', () => {
+  test('maps the daily Antigravity host to the antigravity pool', () => {
+    expect(
+      quotaStyleForEndpoint('https://daily-cloudcode-pa.googleapis.com'),
+    ).toBe('antigravity')
+  })
+
+  test('maps the production Gemini CLI host to the gemini-cli pool', () => {
+    expect(quotaStyleForEndpoint('https://cloudcode-pa.googleapis.com')).toBe(
+      'gemini-cli',
+    )
+  })
+
+  test('defaults unknown hosts to the antigravity pool', () => {
+    expect(quotaStyleForEndpoint('https://example.test')).toBe('antigravity')
   })
 })

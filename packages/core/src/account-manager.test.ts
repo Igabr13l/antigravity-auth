@@ -189,6 +189,51 @@ describe('core AccountManager', () => {
     expect(selected).toBeNull()
   })
 
+  it('keeps an account usable on antigravity when only its gemini-cli pool is limited', () => {
+    const now = 1_700_000_000_000
+    const stored: AccountStorageV4 = {
+      version: 4,
+      accounts: [
+        { refreshToken: 'r1', projectId: 'p1', addedAt: 1, lastUsed: 0 },
+      ],
+      activeIndex: 0,
+      activeIndexByFamily: { gemini: 0 },
+    }
+    const memory = createStore(stored)
+    const manager = new AccountManager(undefined, stored, {
+      store: memory.store,
+      now: () => now,
+      random: () => 0.5,
+    })
+    const account = manager.getAccounts()[0]!
+    // The production fallback host draws from the Gemini CLI pool. A 429 there
+    // must not take the account out of rotation for Antigravity requests.
+    manager.markRateLimitedWithReason(
+      account,
+      'gemini',
+      'gemini-cli',
+      'antigravity-gemini-3.6-flash',
+      'RATE_LIMIT_EXCEEDED',
+    )
+    expect(
+      manager.isRateLimitedForHeaderStyle(
+        account,
+        'gemini',
+        'antigravity',
+        'antigravity-gemini-3.6-flash',
+      ),
+    ).toBe(false)
+
+    const selected = manager.getCurrentOrNextForFamily(
+      'gemini',
+      'antigravity-gemini-3.6-flash',
+      'hybrid',
+      'antigravity',
+    )
+
+    expect(selected?.index).toBe(0)
+  })
+
   it('tracks model-specific limits independently', () => {
     let now = 1_000
     const memory = createStore(stored)
