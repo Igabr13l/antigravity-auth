@@ -717,9 +717,22 @@ function detailElement(
       </box>
       {open && (
         <box flexDirection='column'>
-          {rows.map((row) => (
-            <text fg={row.fg}>{row.text}</text>
-          ))}
+          {rows.map((row) => {
+            if (row.glyph && row.label) {
+              return (
+                <box flexDirection='row' gap={1}>
+                  <text fg={row.glyphFg ?? row.fg}>{row.glyph}</text>
+                  <text fg={textBase}>
+                    <b>{row.label}</b>
+                  </text>
+                  {row.badge && (
+                    <text fg={row.badgeFg ?? textMuted}>· {row.badge}</text>
+                  )}
+                </box>
+              )
+            }
+            return <text fg={row.fg}>{row.text}</text>
+          })}
         </box>
       )}
     </box>

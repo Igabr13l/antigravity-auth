@@ -4,6 +4,10 @@
 
 ### Added
 
+- Enhanced sidebar account rows to match OpenCode's native MCP styling:
+  - Masked emails are now rendered in bold theme text base (`theme.text.base`), with status indicated solely by a semantic bullet (`•` green for ready, `◐` amber for rate-limited, `✕` red for ineligible, `⊝` slate for disabled).
+  - Multi-family active routing is now indicated directly on the family quota rows with `▸ G` and `▸ C` instead of turning the entire account blue and showing ambiguous duplicate `●` bullets across multiple accounts.
+  - Eliminated identity line wrapping by omitting redundant cooldown text from the account header when quota bars are present; the cooling family's bar already displays 0% and the exact replenishment countdown (`(↻ Xd Yh)`). Account-wide blocks without quota bars continue to show their cooldown duration cleanly.
 - Moved the sidebar slot contribution from `sidebar.footer` to `sidebar.content`: the Antigravity pool section now renders directly below Context and MCP inside the main sidebar flow without leaving a large empty gap in the middle. The working directory indicator (`~`) remains cleanly pinned at the bottom footer.
 - Updated the `▼ Antigravity` section header typography to match OpenCode's native `MCP` section: rendered in theme base text (`theme.text.base`) and bold (`<b>Antigravity</b>`) instead of muted slate gray (`#94a3b8`), with collapsed summaries in `theme.text.muted`.
 - Made the sidebar's `▼ Antigravity` section collapsible: clicking on the header row now toggles between expanded (`▼ Antigravity`) and collapsed (`▶ Antigravity (N ready)`), hiding the per-account lines and persisting the open/closed state across sessions.

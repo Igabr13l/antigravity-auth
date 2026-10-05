@@ -311,7 +311,7 @@ const STATE_GLYPH: Record<AccountState, string> = {
 }
 
 const SIDEBAR_GLYPH: Record<AccountState, string> = {
-  ready: '○',
+  ready: '•',
   'rate-limited': '◐',
   ineligible: '✕',
   verification: '⚠',
@@ -451,6 +451,16 @@ export interface SidebarRow {
   readonly text: string
   /** OpenTUI foreground color (hex); undefined = terminal default. */
   readonly fg?: string
+  /** Structured glyph for rich OpenTUI rendering (e.g. '•', '◐', '✕', '⊝') */
+  readonly glyph?: string
+  /** Foreground color for the glyph (semantic health color) */
+  readonly glyphFg?: string
+  /** Account label (masked email or id) */
+  readonly label?: string
+  /** State badge text (e.g. 'DISABLED', 'INELIGIBLE', or cooldown if no bars) */
+  readonly badge?: string
+  /** Color for state badge */
+  readonly badgeFg?: string
 }
 
 const BAR_WIDTH = 10
@@ -460,9 +470,6 @@ const GREEN = '#22c55e'
 const YELLOW = '#eab308'
 const RED = '#ef4444'
 const ACTIVE_BLUE = '#38bdf8'
-
-/** The glyph that marks the account each family is currently dispatching to. */
-const ACTIVE_GLYPH = '●'
 
 /**
  * Short gutter for a quota window, so the 5-hour and weekly rows stay
@@ -494,21 +501,35 @@ export function quotaBarColor(fraction: number): string {
 
 export function accountStateColor(
   state: AccountState,
-  isActive: boolean,
+  isActive: boolean = false,
 ): string {
-  if (isActive) return ACTIVE_BLUE
   switch (state) {
     case 'ready':
-      return '#94a3b8'
+      return isActive ? ACTIVE_BLUE : GREEN
     case 'rate-limited':
       return '#fbbf24'
     case 'ineligible':
-      return '#ef4444'
+      return RED
     case 'verification':
       return '#facc15'
     case 'disabled':
       return '#64748b'
   }
+}
+
+function hasQuotaBars(account: AccountStatus): boolean {
+  if (!account.quota) return false
+  for (const family of ['gemini', 'non-gemini'] as const) {
+    const group = account.quota[family]
+    if (group?.windows && group.windows.length > 0) return true
+    if (
+      typeof group?.remainingFraction === 'number' &&
+      Number.isFinite(group.remainingFraction)
+    ) {
+      return true
+    }
+  }
+  return false
 }
 
 function clampFraction(fraction: number): number {
@@ -569,27 +590,68 @@ export function sidebarRows(
   now: number,
   activeFamilies: readonly string[] = [],
 ): SidebarRow[] {
-  const isActive = activeFamilies.length > 0
-  const glyph = isActive ? ACTIVE_GLYPH : SIDEBAR_GLYPH[account.state]
-  let identity = `${glyph} ${displayAccountId(account)}`
+  const hasQuota = hasQuotaBars(account)
+  const isAccountWideCooldown = account.coolingFamilies.includes('account')
+
+  const glyph = SIDEBAR_GLYPH[account.state]
+  const glyphFg = accountStateColor(account.state, false)
+  const label = displayAccountId(account)
+
+  let badge: string | undefined
+  let badgeFg: string | undefined
+
   if (account.state === 'rate-limited') {
-    const cooldown = formatCooldown(account.cooldownUntil, now)
-    identity += ` · Cooldown ${cooldown}`
+    // Only show cooldown text in identity if there are no quota bars
+    // or if this is an account-wide block not reflected in family quota bars.
+    // When quota bars exist, the family bar already shows the exact reset time.
+    if (!hasQuota || isAccountWideCooldown) {
+      badge = `Cooldown ${formatCooldown(account.cooldownUntil, now)}`
+      badgeFg = '#fbbf24'
+    }
   } else if (account.state === 'ineligible') {
-    identity += ' · INELIGIBLE'
+    badge = 'INELIGIBLE'
+    badgeFg = '#ef4444'
   } else if (account.state === 'verification') {
-    identity += ' · VALIDATION REQUIRED'
+    badge = 'VALIDATION REQUIRED'
+    badgeFg = '#facc15'
   } else if (account.state === 'disabled') {
-    identity += ' · DISABLED'
+    badge = 'DISABLED'
+    badgeFg = '#64748b'
+  } else if (!hasQuota && activeFamilies.length > 0) {
+    const activeLabels = activeFamilies
+      .map((f) => (f === 'gemini' ? 'G' : 'C'))
+      .sort()
+      .join(', ')
+    badge = `active: ${activeLabels}`
+    badgeFg = ACTIVE_BLUE
   }
 
+  const identity = badge ? `${glyph} ${label} · ${badge}` : `${glyph} ${label}`
+
   const rows: SidebarRow[] = [
-    { text: identity, fg: accountStateColor(account.state, isActive) },
+    {
+      text: identity,
+      fg: glyphFg,
+      glyph,
+      glyphFg,
+      label,
+      badge,
+      badgeFg,
+    },
   ]
-  for (const [family, label] of [
+
+  for (const [family, familyLabel] of [
     ['gemini', 'G'],
     ['non-gemini', 'C'],
   ] as const) {
+    const isFamilyActive =
+      family === 'gemini'
+        ? activeFamilies.includes('gemini')
+        : activeFamilies.includes('claude') ||
+          activeFamilies.includes('non-gemini')
+
+    const activeMarker = isFamilyActive ? '▸' : ' '
+
     const group = account.quota?.[family]
     const windows = group?.windows
     if (windows && windows.length > 0) {
@@ -598,7 +660,11 @@ export function sidebarRows(
         const gutter = windowGutter(entry.window)
         // Align bars in a column: the family label rides the first window,
         // later windows indent under it by exactly one family column.
-        const prefix = index === 0 ? `  ${label} ${gutter}` : `    ${gutter}`
+        // Active family gets '▸ G 5h', inactive gets '  G 5h', sub-window gets '    7d'
+        const prefix =
+          index === 0
+            ? `${activeMarker} ${familyLabel} ${gutter}`
+            : `    ${gutter}`
         rows.push(
           barRow(
             prefix,
@@ -616,13 +682,14 @@ export function sidebarRows(
     const clamped = clampFraction(remaining)
     rows.push(
       barRow(
-        `  ${label}`,
+        `${activeMarker} ${familyLabel}`,
         clamped,
         resetSuffix(clamped, group?.resetTime, now),
         quotaBarTone(account.state, clamped),
       ),
     )
   }
+
   return rows
 }
 

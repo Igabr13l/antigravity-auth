@@ -496,7 +496,7 @@ describe('formatting', () => {
 
   test('resolves account state colors', () => {
     expect(accountStateColor('ready', true)).toBe('#38bdf8')
-    expect(accountStateColor('ready', false)).toBe('#94a3b8')
+    expect(accountStateColor('ready', false)).toBe('#22c55e')
     expect(accountStateColor('rate-limited', false)).toBe('#fbbf24')
     expect(accountStateColor('disabled', false)).toBe('#64748b')
     expect(accountStateColor('ineligible', false)).toBe('#ef4444')
@@ -525,12 +525,28 @@ describe('formatting', () => {
     expect(
       sidebarRows(withQuota.accounts[0]!, NOW, ['claude', 'gemini']),
     ).toEqual([
-      { text: '● a***@example.test', fg: '#38bdf8' },
-      { text: '  G ██████░░░░  61%', fg: '#22c55e' },
-      { text: '  C ██░░░░░░░░  15%', fg: '#ef4444' },
+      {
+        text: '• a***@example.test',
+        fg: '#22c55e',
+        glyph: '•',
+        glyphFg: '#22c55e',
+        label: 'a***@example.test',
+        badge: undefined,
+        badgeFg: undefined,
+      },
+      { text: '▸ G ██████░░░░  61%', fg: '#22c55e' },
+      { text: '▸ C ██░░░░░░░░  15%', fg: '#ef4444' },
     ])
     expect(sidebarRows(withQuota.accounts[1]!, NOW)).toEqual([
-      { text: '⊝ b***@example.test · DISABLED', fg: '#64748b' },
+      {
+        text: '⊝ b***@example.test · DISABLED',
+        fg: '#64748b',
+        glyph: '⊝',
+        glyphFg: '#64748b',
+        label: 'b***@example.test',
+        badge: 'DISABLED',
+        badgeFg: '#64748b',
+      },
     ])
   })
 
@@ -573,12 +589,28 @@ describe('formatting', () => {
     expect(
       sidebarRows(withQuota.accounts[0]!, NOW, ['claude', 'gemini']),
     ).toEqual([
-      { text: '● a***@example.test', fg: '#38bdf8' },
-      { text: '  G ██████░░░░  61% (↻ 2h 15m)', fg: '#22c55e' },
-      { text: '  C ██████████ 100%', fg: '#22c55e' },
+      {
+        text: '• a***@example.test',
+        fg: '#22c55e',
+        glyph: '•',
+        glyphFg: '#22c55e',
+        label: 'a***@example.test',
+        badge: undefined,
+        badgeFg: undefined,
+      },
+      { text: '▸ G ██████░░░░  61% (↻ 2h 15m)', fg: '#22c55e' },
+      { text: '▸ C ██████████ 100%', fg: '#22c55e' },
     ])
     expect(sidebarRows(withQuota.accounts[1]!, NOW)).toEqual([
-      { text: '◐ b***@example.test · Cooldown 45s', fg: '#fbbf24' },
+      {
+        text: '◐ b***@example.test · Cooldown 45s',
+        fg: '#fbbf24',
+        glyph: '◐',
+        glyphFg: '#fbbf24',
+        label: 'b***@example.test',
+        badge: 'Cooldown 45s',
+        badgeFg: '#fbbf24',
+      },
       { text: '  G ░░░░░░░░░░   0% (↻ 2d 11h)', fg: '#ef4444' },
     ])
   })
@@ -640,7 +672,15 @@ describe('formatting', () => {
       ]),
     )
     expect(sidebarRows(withQuota.accounts[0]!, NOW)).toEqual([
-      { text: '○ a***@example.test', fg: '#94a3b8' },
+      {
+        text: '• a***@example.test',
+        fg: '#22c55e',
+        glyph: '•',
+        glyphFg: '#22c55e',
+        label: 'a***@example.test',
+        badge: undefined,
+        badgeFg: undefined,
+      },
       { text: '  G 5h ██████████  95% (↻ 4h 41m)', fg: '#22c55e' },
       { text: '    7d ██████░░░░  59% (↻ 2d 10h)', fg: '#22c55e' },
       { text: '  C 5h ██████████  95% (↻ 4h 41m)', fg: '#22c55e' },
@@ -666,8 +706,87 @@ describe('formatting', () => {
     )
     const disabled = { ...withQuota.accounts[0]!, state: 'disabled' as const }
     expect(sidebarRows(disabled, NOW)).toEqual([
-      { text: '⊝ a***@example.test · DISABLED', fg: '#64748b' },
+      {
+        text: '⊝ a***@example.test · DISABLED',
+        fg: '#64748b',
+        glyph: '⊝',
+        glyphFg: '#64748b',
+        label: 'a***@example.test',
+        badge: 'DISABLED',
+        badgeFg: '#64748b',
+      },
       { text: '  G ██████████ 100%', fg: '#64748b' },
+    ])
+  })
+
+  test('sidebar rows: per-family rate limit with quota omits redundant cooldown text and marks active family with ▸', () => {
+    // When an account is rate-limited on Gemini but active on Claude:
+    // 1. The identity row preserves the amber ◐ glyph and does NOT append
+    //    a redundant '· Cooldown ...' that causes line wrapping, because the G bar
+    //    already shows 0% and the reset time.
+    // 2. The active family (Claude) receives '▸ C' while inactive (Gemini) gets '  G'.
+    const status = summarizeAccountPool(
+      pool([
+        {
+          email: 'i@solunika.com',
+          enabled: true,
+          rateLimitResetTimes: {
+            'gemini-antigravity:gemini-3.8-flash-high': NOW + 47 * 3_600_000,
+          },
+        },
+      ]),
+      NOW,
+    )
+    const geminiReset = new Date(NOW + 47 * 3_600_000).toISOString()
+    const claudeReset = new Date(NOW + 6 * 24 * 3_600_000).toISOString()
+    const withQuota = attachQuota(
+      status,
+      new Map([
+        [
+          status.accounts[0]!.key,
+          {
+            gemini: {
+              remainingFraction: 0,
+              resetTime: geminiReset,
+              modelCount: 1,
+              windows: [
+                {
+                  window: 'weekly',
+                  remainingFraction: 0,
+                  resetTime: geminiReset,
+                },
+              ],
+            },
+            'non-gemini': {
+              remainingFraction: 1,
+              resetTime: claudeReset,
+              modelCount: 1,
+              windows: [
+                {
+                  window: 'weekly',
+                  remainingFraction: 1,
+                  resetTime: claudeReset,
+                },
+              ],
+            },
+          },
+        ],
+      ]),
+    )
+
+    const rows = sidebarRows(withQuota.accounts[0]!, NOW, ['claude'])
+    expect(rows).toEqual([
+      {
+        text: '◐ i***@solunika.com',
+        fg: '#fbbf24',
+        glyph: '◐',
+        glyphFg: '#fbbf24',
+        label: 'i***@solunika.com',
+        badge: undefined,
+        badgeFg: undefined,
+      },
+      { text: '  G 7d ░░░░░░░░░░   0% (↻ 1d 23h)', fg: '#ef4444' },
+      { text: '▸ C 7d ██████████ 100% (↻ 6d)', fg: '#22c55e' },
     ])
   })
 
