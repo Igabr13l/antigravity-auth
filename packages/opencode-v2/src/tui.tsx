@@ -321,11 +321,7 @@ export function createOpenCodeV2AntigravityTui(
         : ctx.storage.memory<{ open: boolean }>('antigravity-sidebar-view', {
             initial: { open: true },
           })
-      let lastToggleTime = 0
       const toggleOpen = (): void => {
-        const currentTime = Date.now()
-        if (currentTime - lastToggleTime < 300) return
-        lastToggleTime = currentTime
         try {
           const res: unknown = setViewState((draft) => {
             draft.open = !(draft.open ?? true)
@@ -709,7 +705,7 @@ function detailElement(
   return (
     <box flexDirection='column'>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: opentui renders to a terminal, not the DOM — ARIA roles do not apply */}
-      <box flexDirection='row' gap={1} onMouseDown={toggle} onMouseUp={toggle}>
+      <box flexDirection='row' gap={1} onMouseDown={toggle}>
         <text fg={textBase}>
           {glyph} <b>Antigravity</b>
         </text>
