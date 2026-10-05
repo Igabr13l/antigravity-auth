@@ -9,7 +9,13 @@ import { createHash } from 'node:crypto'
 import type {
   AccountStorageV4,
   AnyAccountStorage,
+  QuotaGroupSummary,
 } from '@cortexkit/antigravity-auth-core'
+
+/** Per-family quota aggregates for one account (gemini + claude/gpt-oss). */
+export type QuotaGroups = Partial<
+  Record<'gemini' | 'non-gemini', QuotaGroupSummary>
+>
 
 export type AccountState =
   | 'ready'
@@ -35,6 +41,8 @@ export interface AccountStatus {
   readonly coolingFamilies: readonly string[]
   /** Latest instant at which any cooldown for this account ends. */
   readonly cooldownUntil: number
+  /** Cached quota aggregates, attached by the caller when available. */
+  readonly quota?: QuotaGroups
 }
 
 export interface AccountPoolStatus {
@@ -302,21 +310,105 @@ const STATE_GLYPH: Record<AccountState, string> = {
   disabled: '-',
 }
 
-export function formatAccountLine(account: AccountStatus, now: number): string {
+/**
+ * Pure merge of cached quota aggregates into a summarized pool. Quota is
+ * fetched out-of-band (network, cached in memory) and joined by the stable
+ * account key, so a quota snapshot can never re-order or re-identify accounts.
+ */
+export function attachQuota(
+  status: AccountPoolStatus,
+  quotaByKey: ReadonlyMap<string, QuotaGroups>,
+): AccountPoolStatus {
+  if (quotaByKey.size === 0) return status
+  return {
+    ...status,
+    accounts: status.accounts.map((account) => {
+      const quota = quotaByKey.get(account.key)
+      return quota ? { ...account, quota } : account
+    }),
+  }
+}
+
+/** Format an ISO reset time as a compact duration until reset (e.g. `2h 15m`). */
+export function formatResetIn(
+  resetTime: string | undefined,
+  now: number,
+): string | undefined {
+  if (!resetTime) return undefined
+  const timestamp = Date.parse(resetTime)
+  if (!Number.isFinite(timestamp)) return undefined
+  const ms = timestamp - now
+  if (ms <= 0) return undefined
+  const minutes = Math.ceil(ms / 60_000)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return rest > 0 ? `${hours}h ${rest}m` : `${hours}h`
+}
+
+/**
+ * Compact per-group quota fragments for one account, mirroring the OpenCode 1
+ * adapter's hints: 100%-ready groups are noise and stay hidden, exhausted
+ * groups with a future reset collapse into a reset duration, and anything
+ * under 20% is flagged LOW. Groups without a usable fraction are skipped
+ * (fail-open).
+ */
+export function formatQuotaParts(
+  quota: QuotaGroups | undefined,
+  now: number,
+): string[] {
+  if (!quota) return []
+  const parts: string[] = []
+  for (const [family, label] of [
+    ['gemini', 'Gemini'],
+    ['non-gemini', 'Non-Gemini'],
+  ] as const) {
+    const group = quota[family]
+    const remaining = group?.remainingFraction
+    if (typeof remaining !== 'number' || !Number.isFinite(remaining)) continue
+    const clamped = Math.max(0, Math.min(1, remaining))
+    const percent = Math.round(clamped * 100)
+    if (clamped <= 0) {
+      const resetIn = formatResetIn(group?.resetTime, now)
+      if (resetIn) parts.push(`${label} exhausted (resets ${resetIn})`)
+      // No reset time: stale exhaustion reads as ready on Google's side.
+      continue
+    }
+    if (percent >= 100) continue
+    parts.push(
+      clamped < 0.2 ? `${label} LOW ${percent}%` : `${label} ${percent}%`,
+    )
+  }
+  return parts
+}
+
+export function formatAccountLine(
+  account: AccountStatus,
+  now: number,
+  activeFamilies: readonly string[] = [],
+): string {
   const id = displayAccountId(account)
   const glyph = STATE_GLYPH[account.state]
+  const parts: string[] = []
   if (account.state === 'rate-limited') {
     const minutes = Math.max(
       1,
       Math.round((account.cooldownUntil - now) / 60_000),
     )
-    return `${glyph} ${id} COOLDOWN ${minutes}m (${account.coolingFamilies.join(',')})`
+    parts.push(`COOLDOWN ${minutes}m (${account.coolingFamilies.join(',')})`)
+  } else if (account.state === 'ineligible') {
+    parts.push('INELIGIBLE')
+  } else if (account.state === 'verification') {
+    parts.push('VALIDATION REQUIRED')
+  } else if (account.state === 'disabled') {
+    parts.push('DISABLED')
+  } else {
+    parts.push('READY')
   }
-  if (account.state === 'ineligible') return `${glyph} ${id} INELIGIBLE`
-  if (account.state === 'verification')
-    return `${glyph} ${id} VALIDATION REQUIRED`
-  if (account.state === 'disabled') return `${glyph} ${id} DISABLED`
-  return `${glyph} ${id} READY`
+  parts.push(...formatQuotaParts(account.quota, now))
+  const active = activeFamilies.join('/')
+  if (active) parts.push(`active: ${active}`)
+  return `${glyph} ${id} ${parts.join(' · ')}`
 }
 
 /**

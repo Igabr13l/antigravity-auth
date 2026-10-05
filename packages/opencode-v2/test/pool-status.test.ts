@@ -4,9 +4,11 @@ import type { AccountStorageV4 } from '@cortexkit/antigravity-auth-core'
 
 import {
   accountKey,
+  attachQuota,
   diffAccountPoolStatus,
   formatAccountLine,
   formatPoolSummaryLine,
+  formatQuotaParts,
   maskEmail,
   summarizeAccountPool,
 } from '../src/pool-status.ts'
@@ -374,6 +376,94 @@ describe('formatting', () => {
     )
     expect(formatAccountLine(status.accounts[0]!, NOW)).toBe(
       '~ a***@example.test COOLDOWN 2m (auth-failure)',
+    )
+  })
+  test('formats quota fragments per group', () => {
+    expect(
+      formatQuotaParts(
+        { gemini: { remainingFraction: 0.78, modelCount: 3 } },
+        NOW,
+      ),
+    ).toEqual(['Gemini 78%'])
+    expect(
+      formatQuotaParts(
+        { 'non-gemini': { remainingFraction: 0.15, modelCount: 2 } },
+        NOW,
+      ),
+    ).toEqual(['Non-Gemini LOW 15%'])
+  })
+
+  test('hides saturated groups and skips fractions that are missing', () => {
+    expect(
+      formatQuotaParts(
+        {
+          gemini: { remainingFraction: 1, modelCount: 3 },
+          'non-gemini': { modelCount: 2 },
+        },
+        NOW,
+      ),
+    ).toEqual([])
+  })
+
+  test('collapses exhausted groups into their reset duration', () => {
+    const reset = new Date(NOW + 2 * 60 * 60 * 1000).toISOString()
+    expect(
+      formatQuotaParts(
+        { gemini: { remainingFraction: 0, resetTime: reset, modelCount: 3 } },
+        NOW,
+      ),
+    ).toEqual(['Gemini exhausted (resets 2h)'])
+    // Stale exhaustion (no future reset) reads as ready and stays hidden.
+    expect(
+      formatQuotaParts(
+        { gemini: { remainingFraction: 0, modelCount: 3 } },
+        NOW,
+      ),
+    ).toEqual([])
+  })
+
+  test('attachQuota joins aggregates by stable account key', () => {
+    const status = summarizeAccountPool(
+      pool([{ email: 'a@example.test' }, { email: 'b@example.test' }]),
+      NOW,
+    )
+    const quotaByKey = new Map([
+      [
+        status.accounts[1]!.key,
+        { gemini: { remainingFraction: 0.4, modelCount: 3 } },
+      ],
+    ])
+    const attached = attachQuota(status, quotaByKey)
+    expect(attached.accounts[0]!.quota).toBeUndefined()
+    expect(attached.accounts[1]!.quota?.gemini?.remainingFraction).toBe(0.4)
+    expect(attached.accounts[1]!.key).toBe(status.accounts[1]!.key)
+  })
+
+  test('renders quota and the active account marker on the account line', () => {
+    const status = summarizeAccountPool(
+      pool([
+        { email: 'a@example.test' },
+        { email: 'b@example.test', enabled: false },
+      ]),
+      NOW,
+    )
+    const withQuota = attachQuota(
+      status,
+      new Map([
+        [
+          status.accounts[0]!.key,
+          {
+            gemini: { remainingFraction: 0.78, modelCount: 3 },
+            'non-gemini': { remainingFraction: 0.15, modelCount: 2 },
+          },
+        ],
+      ]),
+    )
+    expect(formatAccountLine(withQuota.accounts[0]!, NOW, ['gemini'])).toBe(
+      '* a***@example.test READY · Gemini 78% · Non-Gemini LOW 15% · active: gemini',
+    )
+    expect(formatAccountLine(withQuota.accounts[1]!, NOW)).toBe(
+      '- b***@example.test DISABLED',
     )
   })
 })

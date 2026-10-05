@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- The TUI sidebar and accounts dialog now show per-account quota (the OpenCode 1 adapter's design): remaining percentage per family (`Gemini 78%`, `Non-Gemini LOW 15%`), exhausted groups collapsed to `exhausted (resets <duration>)`, and an `active: <families>` marker on the account the pool currently dispatches to. Quota is fetched out-of-band per account (windowed summary with the legacy fallback), cached in memory for 2 minutes with in-flight dedupe and exponential error backoff (30s → 10min); access tokens and aggregates never touch the pool file.
+
 ### Fixed
 
 - Fixed the TUI plugin registering a new keymap layer on every slot render, which stalled the host's keymap dispatcher — `ctrl+c` (and other bound keys) stopped responding, most visibly in resumed sessions. Host 2.0.22's `ctx.keymap.commands()` never lists keymap-layer commands, so the "re-register when dropped" probe always considered the layer gone; with reactive footer content re-rendering the slots at high frequency (~80/s observed), layers accumulated unboundedly. The accounts layer is now bound exactly once per TUI session (failed first attempts still retry on later renders); `ctrl+g` verified to still open the accounts dialog against the real host.

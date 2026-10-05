@@ -16,13 +16,21 @@
 // embedded copies, so no Solid packages are shipped at runtime. Every host
 // call is defensive — a TUI plugin must never take the TUI down.
 
+import { createHash } from 'node:crypto'
 import type {
+  AccountMetadataV3,
   AccountStorageV4,
   AnyAccountStorage,
 } from '@cortexkit/antigravity-auth-core'
 import {
+  ANTIGRAVITY_ENDPOINT_FALLBACKS,
+  aggregateQuota,
+  aggregateQuotaSummary,
+  fetchAvailableModels,
+  fetchQuotaSummary,
   loadAccountStorage,
   mutateAccountStorage,
+  refreshAntigravityToken,
 } from '@cortexkit/antigravity-auth-core'
 import type { Plugin as TuiPlugin } from '@opencode-ai/plugin/tui'
 
@@ -30,6 +38,7 @@ import { accountsFilePath } from './paths.ts'
 import {
   type AccountPoolStatus,
   accountKey,
+  attachQuota,
   diffAccountPoolStatus,
   displayAccountId,
   formatAccountLine,
@@ -37,11 +46,21 @@ import {
   isAccountBlocked,
   isStableAccountKey,
   type PoolChange,
+  type QuotaGroups,
   summarizeAccountPool,
 } from './pool-status.ts'
 
 interface TuiPoolState {
   status: AccountPoolStatus | undefined
+}
+
+/** Minimal raw-account shape the quota fetcher needs from the pool. */
+interface QuotaAccountLike {
+  email?: string
+  refreshToken?: string
+  projectId?: string
+  managedProjectId?: string
+  enabled?: boolean
 }
 
 /** How a dialog toggle can be refused inside the lock-held write. */
@@ -67,12 +86,23 @@ export interface OpenCodeV2TuiDependencies {
   ) => Promise<AccountStorageV4>
   pollMs: number
   now: () => number
+  /**
+   * Fetch one account's quota aggregates. Network-bound; implementations are
+   * expected to cache (the default fetcher caches per account for 2 minutes
+   * and backs off on errors). Returning undefined means "no data this round".
+   */
+  fetchQuota: (account: QuotaAccountLike) => Promise<QuotaGroups | undefined>
 }
 
 export type OpenCodeV2TuiDependencyOverrides =
   Partial<OpenCodeV2TuiDependencies>
 
 const POLL_MS = 5_000
+/** How long a successful quota fetch is reused before hitting the API again. */
+const QUOTA_TTL_MS = 120_000
+/** Error backoff for quota fetches: 30s doubling up to 10 minutes. */
+const QUOTA_BACKOFF_BASE_MS = 30_000
+const QUOTA_BACKOFF_MAX_MS = 600_000
 
 function defaultLoadPool(): Promise<AnyAccountStorage | null> {
   return loadAccountStorage(accountsFilePath()).catch(() => null)
@@ -82,6 +112,110 @@ function defaultMutatePool(
   mutate: (current: AccountStorageV4) => AccountStorageV4 | undefined,
 ): Promise<AccountStorageV4> {
   return mutateAccountStorage(accountsFilePath(), mutate)
+}
+
+function quotaCacheKey(account: QuotaAccountLike): string {
+  const email = account.email?.trim().toLowerCase()
+  if (email) return `e:${email}`
+  const token = account.refreshToken ?? ''
+  return `t:${createHash('sha256').update(token).digest('hex').slice(0, 16)}`
+}
+
+interface QuotaFetcherState {
+  cache: Map<string, { groups: QuotaGroups; fetchedAt: number }>
+}
+
+/**
+ * Default quota fetcher: in-memory per-account access-token cache, a 2-minute
+ * result TTL, in-flight dedupe, and exponential error backoff (30s → 10min).
+ * Access tokens stay in memory — the TUI plugin never writes the pool file.
+ */
+function createDefaultQuotaFetcher(): {
+  fetch: (account: QuotaAccountLike) => Promise<QuotaGroups | undefined>
+  state: QuotaFetcherState
+} {
+  const state: QuotaFetcherState = { cache: new Map() }
+  const nextAttemptAt = new Map<string, number>()
+  const failures = new Map<string, number>()
+  const inflight = new Map<string, Promise<QuotaGroups | undefined>>()
+  const tokens = new Map<string, { access: string; expires: number }>()
+
+  const accessTokenFor = async (
+    account: QuotaAccountLike,
+    key: string,
+  ): Promise<string | undefined> => {
+    if (!account.refreshToken) return undefined
+    const cached = tokens.get(key)
+    if (cached && cached.expires > Date.now() + 60_000) return cached.access
+    const refreshed = await refreshAntigravityToken(account.refreshToken)
+    tokens.set(key, { access: refreshed.access, expires: refreshed.expires })
+    return refreshed.access
+  }
+
+  const fetch = async (
+    account: QuotaAccountLike,
+  ): Promise<QuotaGroups | undefined> => {
+    if (account.enabled === false) return undefined
+    const key = quotaCacheKey(account)
+    const now = Date.now()
+    const cached = state.cache.get(key)
+    if (cached && now - cached.fetchedAt < QUOTA_TTL_MS) return cached.groups
+    if ((nextAttemptAt.get(key) ?? 0) > now) return cached?.groups
+    const running = inflight.get(key)
+    if (running) return running
+
+    const task = (async (): Promise<QuotaGroups | undefined> => {
+      try {
+        const access = await accessTokenFor(account, key)
+        if (!access) return cached?.groups
+        let groups: QuotaGroups | undefined
+        try {
+          const { summary } = await fetchQuotaSummary({
+            accessToken: access,
+            endpoints: ANTIGRAVITY_ENDPOINT_FALLBACKS,
+            projectId: account.projectId,
+            managedProjectId: account.managedProjectId,
+          })
+          groups = aggregateQuotaSummary(summary).groups
+        } catch {
+          // Legacy contract fallback: aggregate per-model quotas from
+          // fetchAvailableModels (mirrors the OpenCode 1 adapter's order).
+          const models = await fetchAvailableModels({
+            accessToken: access,
+            endpoints: ANTIGRAVITY_ENDPOINT_FALLBACKS,
+            // Empty string: the fetcher omits the project field for falsy IDs.
+            projectId: account.projectId ?? '',
+          })
+          groups = aggregateQuota(models.models).groups
+        }
+        if (groups && Object.keys(groups).length > 0) {
+          state.cache.set(key, { groups, fetchedAt: Date.now() })
+          failures.delete(key)
+          nextAttemptAt.delete(key)
+          return groups
+        }
+        return cached?.groups
+      } catch {
+        const count = (failures.get(key) ?? 0) + 1
+        failures.set(key, count)
+        nextAttemptAt.set(
+          key,
+          Date.now() +
+            Math.min(
+              QUOTA_BACKOFF_BASE_MS * 2 ** (count - 1),
+              QUOTA_BACKOFF_MAX_MS,
+            ),
+        )
+        return cached?.groups
+      } finally {
+        inflight.delete(key)
+      }
+    })()
+    inflight.set(key, task)
+    return task
+  }
+
+  return { fetch, state }
 }
 
 function changeMessage(change: PoolChange): string {
@@ -102,11 +236,13 @@ function changeMessage(change: PoolChange): string {
 export function createOpenCodeV2AntigravityTui(
   overrides: OpenCodeV2TuiDependencyOverrides = {},
 ): TuiPlugin.Definition {
+  const defaultQuotaFetcher = createDefaultQuotaFetcher()
   const dependencies: OpenCodeV2TuiDependencies = {
     loadPool: overrides.loadPool ?? defaultLoadPool,
     mutatePool: overrides.mutatePool ?? defaultMutatePool,
     pollMs: overrides.pollMs ?? POLL_MS,
     now: overrides.now ?? Date.now,
+    fetchQuota: overrides.fetchQuota ?? defaultQuotaFetcher.fetch,
   }
 
   return {
@@ -120,6 +256,8 @@ export function createOpenCodeV2AntigravityTui(
       let previous: AccountPoolStatus | undefined
       let keymapBound = false
       let disposed = false
+      /** Resolved quota aggregates by stable account key (in-memory only). */
+      const quotaByKey = new Map<string, QuotaGroups>()
 
       const showToast = (
         message: string,
@@ -161,12 +299,38 @@ export function createOpenCodeV2AntigravityTui(
           })
           return
         }
-        const next = summarizeAccountPool(storage, dependencies.now())
+        const summarized = summarizeAccountPool(storage, dependencies.now())
+        // Merge whatever quota already resolved (network refresh runs
+        // out-of-band below and lands on a later poll, ≤5s later, so the 5s
+        // pool read never waits on the API).
+        const next = attachQuota(summarized, quotaByKey)
         announce(diffAccountPoolStatus(previous, next))
         previous = next
         mutateState((draft) => {
           draft.status = next
         })
+        void refreshQuotas(storage)
+      }
+
+      /**
+       * Out-of-band quota refresh: one bounded fetch per account, deduped and
+       * TTL'd inside the fetcher. Fire-and-forget — resolved aggregates are
+       * stored by stable account key and surface on the next pool read (≤5s).
+       * Never re-enters refresh() directly, so a fast cached round cannot
+       * loop.
+       */
+      const refreshQuotas = async (
+        storage: AnyAccountStorage,
+      ): Promise<void> => {
+        if (disposed) return
+        const rawAccounts: AccountMetadataV3[] =
+          storage.version === 4 ? storage.accounts : []
+        await Promise.allSettled(
+          rawAccounts.map(async (raw, index) => {
+            const groups = await dependencies.fetchQuota(raw)
+            if (groups) quotaByKey.set(accountKey(raw, index), groups)
+          }),
+        )
       }
 
       /**
@@ -215,7 +379,11 @@ export function createOpenCodeV2AntigravityTui(
           const selected = await ctx.ui.dialog.select<string>({
             title: 'Antigravity accounts',
             options: current.accounts.map((account) => ({
-              title: formatAccountLine(account, dependencies.now()),
+              title: formatAccountLine(
+                account,
+                dependencies.now(),
+                activeFamiliesFor(current, account),
+              ),
               value: account.key,
             })),
           })
@@ -425,10 +593,30 @@ function detailElement(status: AccountPoolStatus | undefined, now: number) {
   return (
     <box flexDirection='column'>
       {status.accounts.map((account) => (
-        <text>{formatAccountLine(account, now)}</text>
+        <text>
+          {formatAccountLine(account, now, activeFamiliesFor(status, account))}
+        </text>
       ))}
     </box>
   )
+}
+
+/**
+ * Families whose active pool index currently points at this account. The
+ * active marker is what tells the operator which account their traffic is
+ * actually using right now.
+ */
+export function activeFamiliesFor(
+  status: AccountPoolStatus,
+  account: AccountPoolStatus['accounts'][number],
+): string[] {
+  const families: string[] = []
+  for (const family of ['claude', 'gemini'] as const) {
+    if (status.activeByFamily[family] === account.index) {
+      families.push(family)
+    }
+  }
+  return families
 }
 
 export default createOpenCodeV2AntigravityTui()

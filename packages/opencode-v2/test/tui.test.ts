@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 
 import type { AccountStorageV4 } from '@cortexkit/antigravity-auth-core'
-
+import { formatAccountLine } from '../src/pool-status.ts'
 import {
+  activeFamiliesFor,
   createOpenCodeV2AntigravityTui,
   type OpenCodeV2TuiDependencyOverrides,
 } from '../src/tui.tsx'
@@ -107,6 +108,8 @@ async function setupTui(overrides: OpenCodeV2TuiDependencyOverrides = {}) {
   const plugin = createOpenCodeV2AntigravityTui({
     pollMs: 5,
     now: () => NOW,
+    // Tests stay hermetic: the default quota fetcher talks to Google.
+    fetchQuota: async () => undefined,
     ...overrides,
   })
   const cleanup = await plugin.setup(harness.context as never)
@@ -536,6 +539,61 @@ describe('OpenCode 2 Antigravity TUI plugin', () => {
     release?.()
     await Bun.sleep(20)
     expect(calls).toBe(2)
+  })
+
+  test('attaches fetched quota and the active marker to the sidebar line', async () => {
+    let quotaCalls = 0
+    const testPool = pool([{ email: 'a@example.test' }])
+    const harness = stubContext()
+    const plugin = createOpenCodeV2AntigravityTui({
+      pollMs: 5,
+      now: () => NOW,
+      loadPool: async () => testPool,
+      fetchQuota: async () => {
+        quotaCalls += 1
+        return {
+          gemini: { remainingFraction: 0.78, modelCount: 3 },
+        }
+      },
+    })
+    const cleanup = await plugin.setup(harness.context as never)
+    await Bun.sleep(60)
+
+    expect(quotaCalls).toBeGreaterThan(0)
+    const status = harness.store.status
+    expect(status?.accounts[0]?.quota?.gemini?.remainingFraction).toBe(0.78)
+    // activeIndexByFamily points at index 0 in the test pool.
+    const line = formatAccountLine(
+      status!.accounts[0]!,
+      NOW,
+      activeFamiliesFor(status!, status!.accounts[0]!),
+    )
+    expect(line).toContain('Gemini 78%')
+    expect(line).toContain('active: claude/gemini')
+
+    if (cleanup) await cleanup()
+  })
+
+  test('a failing quota fetch never breaks the sidebar', async () => {
+    const testPool = pool([{ email: 'a@example.test' }])
+    const harness = stubContext()
+    const plugin = createOpenCodeV2AntigravityTui({
+      pollMs: 5,
+      now: () => NOW,
+      loadPool: async () => testPool,
+      fetchQuota: async () => {
+        throw new Error('quota endpoint down')
+      },
+    })
+    const cleanup = await plugin.setup(harness.context as never)
+    await Bun.sleep(60)
+
+    expect(harness.store.status?.accounts[0]?.quota).toBeUndefined()
+    const line = formatAccountLine(harness.store.status!.accounts[0]!, NOW)
+    expect(line).toContain('READY')
+    expect(line).not.toContain('Gemini')
+
+    if (cleanup) await cleanup()
   })
 
   test('registers the accounts layer exactly once across slot re-renders', async () => {

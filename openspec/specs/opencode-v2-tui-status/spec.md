@@ -57,6 +57,31 @@ rendered.
 - **THEN** the summary reports the pool as unavailable instead of showing
   empty numbers, and the TUI is not disrupted
 
+### Requirement: Per-account quota display
+
+The sidebar lines and the accounts dialog SHALL show, when quota data is
+available, each account's remaining usage per family (e.g. `Gemini 78%`,
+`Non-Gemini LOW 15%`), collapse exhausted groups with a known reset into
+`exhausted (resets <duration>)`, hide fully saturated groups, and mark which
+account is currently active per family (`active: <families>`). Quota SHALL be
+fetched out-of-band with in-memory caching (results reused for at least a
+minute), in-flight dedupe and error backoff, so the pool poll never waits on
+the API; access tokens and quota aggregates stay in memory and are never
+written to the pool file.
+
+#### Scenario: Quota becomes visible
+
+- **WHEN** the plugin fetches an account's quota successfully
+- **THEN** the next pool read (within one poll interval) renders the
+  percentage on that account's sidebar line, and the account that the pool's
+  active index points at is marked `active: <families>`
+
+#### Scenario: Quota endpoint failing
+
+- **WHEN** the quota fetch fails repeatedly
+- **THEN** the account line keeps rendering without quota data and the
+  fetcher backs off exponentially instead of hammering the API
+
 ### Requirement: Stable account identity
 
 Each derived account SHALL carry an opaque key that identifies it independently
