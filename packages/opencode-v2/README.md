@@ -66,12 +66,29 @@ bun install
 
 ### Local development install
 
+Two supported forms for a local checkout — **pick one, never both** (loading
+the plugin twice registers two request bridges):
+
 `bun run --cwd packages/opencode-v2 install:local` builds the adapter and copies
 its entrypoints into `<config>/plugins/antigravity-auth/` (`index.ts` server,
 `tui.ts` TUI, plus the helper modules). OpenCode 2 discovers that directory, so
 both the server and TUI halves load without an `opencode.json` or `cli.json`
 entry. Re-run it after every rebuild and restart OpenCode (or let the plugin
 watcher reload). Set `OPENCODE_CONFIG_DIR` to target another config directory.
+
+Alternatively, reference the package directory directly so the host loads
+`dist/` in place — after `bun run build`, no copy step is needed:
+
+```jsonc
+{
+  "plugins": ["file:///absolute/path/to/antigravity-auth/packages/opencode-v2"]
+}
+```
+
+The root `index.ts` / `tui.ts` shims exist for this form: the discovery loader
+resolves a directory plugin's entries as `<dir>/index.ts` and `<dir>/tui.ts`
+and does not follow the package `exports` map into `dist/`. They are dev-only
+and excluded from the published package.
 
 Register the package and the Antigravity-backed Google models in `opencode.json`:
 use the package name for an npm installation, or install the working-tree build
