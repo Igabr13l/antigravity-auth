@@ -4,8 +4,11 @@ import type { AccountStorageV4 } from '@cortexkit/antigravity-auth-core'
 import { formatAccountLine } from '../src/pool-status.ts'
 import {
   activeFamiliesFor,
+  createDefaultQuotaFetcher,
   createOpenCodeV2AntigravityTui,
+  isQuotaAuthError,
   type OpenCodeV2TuiDependencyOverrides,
+  type QuotaFetcherDependencies,
 } from '../src/tui.tsx'
 
 const NOW = 1_000_000
@@ -677,5 +680,105 @@ describe('OpenCode 2 Antigravity TUI plugin', () => {
     expect(disposed).toBe(2)
     if (cleanup) await cleanup()
     expect(disposed).toBe(0)
+  })
+})
+
+describe('default quota fetcher', () => {
+  test('classifies rejected-token errors as auth failures', () => {
+    expect(
+      isQuotaAuthError(new Error('retrieveUserQuotaSummary 401 at x')),
+    ).toBe(true)
+    expect(isQuotaAuthError(new Error('UNAUTHENTICATED'))).toBe(true)
+    expect(isQuotaAuthError(new Error('fetchQuotaSummary 500 at x'))).toBe(
+      false,
+    )
+    expect(isQuotaAuthError(new Error('network error'))).toBe(false)
+  })
+
+  test('refreshes a rejected-but-unexpired access token once, then retries', async () => {
+    // Regression: a token cached by `expires` that the API rejects left the
+    // account's quota dark until the nominal expiry, because the failure only
+    // armed the error backoff and never invalidated the cached token.
+    let refreshes = 0
+    const accesses: string[] = []
+    const reset = new Date(Date.now() + 3_600_000).toISOString()
+    const deps = {
+      refreshAntigravityToken: async () => {
+        refreshes += 1
+        return { access: `token-${refreshes}`, expires: Date.now() + 3_600_000 }
+      },
+      fetchQuotaSummary: async (options: { accessToken: string }) => {
+        accesses.push(options.accessToken)
+        if (options.accessToken === 'token-1') {
+          throw new Error('retrieveUserQuotaSummary 401 at endpoint')
+        }
+        return {
+          summary: {
+            groups: [
+              {
+                displayName: 'Gemini models',
+                buckets: [
+                  {
+                    bucketId: 'gemini-3.8-flash',
+                    displayName: 'Gemini 3.8 Flash',
+                    window: '5h',
+                    resetTime: reset,
+                    remainingFraction: 0.5,
+                  },
+                ],
+              },
+            ],
+          },
+        }
+      },
+      fetchAvailableModels: async () => {
+        throw new Error('legacy fallback must not run on an auth failure')
+      },
+    } as unknown as QuotaFetcherDependencies
+
+    const fetcher = createDefaultQuotaFetcher(deps)
+    const groups = await fetcher.fetch({
+      email: 'a@example.test',
+      refreshToken: 'refresh',
+      enabled: true,
+    })
+
+    expect(refreshes).toBe(2)
+    expect(accesses).toEqual(['token-1', 'token-2'])
+    expect(groups?.gemini?.remainingFraction).toBe(0.5)
+    expect(groups?.gemini?.windows?.[0]?.window).toBe('5h')
+  })
+
+  test('still falls back to the legacy probe on a non-auth failure', async () => {
+    let legacyCalls = 0
+    const deps = {
+      refreshAntigravityToken: async () => ({
+        access: 'token',
+        expires: Date.now() + 3_600_000,
+      }),
+      fetchQuotaSummary: async () => {
+        throw new Error('retrieveUserQuotaSummary 500 at endpoint')
+      },
+      fetchAvailableModels: async () => {
+        legacyCalls += 1
+        return {
+          models: {
+            'gemini-3.8-flash': {
+              quotaInfo: { remainingFraction: 0.25 },
+            },
+          },
+        }
+      },
+    } as unknown as QuotaFetcherDependencies
+
+    const fetcher = createDefaultQuotaFetcher(deps)
+    const groups = await fetcher.fetch({
+      email: 'a@example.test',
+      refreshToken: 'refresh',
+      enabled: true,
+    })
+
+    expect(legacyCalls).toBe(1)
+    expect(groups?.gemini?.remainingFraction).toBe(0.25)
   })
 })

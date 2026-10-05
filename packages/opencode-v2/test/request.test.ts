@@ -6,7 +6,7 @@ import {
   SKIP_THOUGHT_SIGNATURE,
 } from '@cortexkit/antigravity-auth-core'
 
-import { buildEnvelope } from '../src/plugin.ts'
+import { buildEnvelope, resolveJobSessionID } from '../src/plugin.ts'
 
 function scopeForRequest() {
   const sessions = new AgyRequestSessionStore('opencode-v2-request-test')
@@ -284,5 +284,23 @@ describe('OpenCode 2 Antigravity request envelope', () => {
     expect(envelope.request.toolConfig).toEqual({
       functionCallingConfig: { mode: 'VALIDATED' },
     })
+  })
+})
+
+describe('resolveJobSessionID', () => {
+  it('keeps a real session id, trimmed', () => {
+    expect(resolveJobSessionID('ses-1', () => 'unused')).toBe('ses-1')
+    expect(resolveJobSessionID('  ses-2  ', () => 'unused')).toBe('ses-2')
+  })
+
+  it('isolates anonymous requests instead of collapsing them onto one key', () => {
+    // Regression: an omitted sessionID fell back to a shared '__default__'
+    // key, so unrelated sessions shared one AGY conversation/trajectory and
+    // could mix thinking signatures.
+    const first = resolveJobSessionID('', () => 'a')
+    const second = resolveJobSessionID(undefined, () => 'b')
+    expect(first).toBe('anonymous:a')
+    expect(second).toBe('anonymous:b')
+    expect(first).not.toBe(second)
   })
 })

@@ -123,16 +123,51 @@ function quotaCacheKey(account: QuotaAccountLike): string {
   return `t:${createHash('sha256').update(token).digest('hex').slice(0, 16)}`
 }
 
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * Whether a quota fetch failed because the access token was rejected (rather
+ * than because the endpoint was transiently unavailable). Matching on the
+ * message is the only signal the core fetchers expose: they fold the HTTP
+ * status into the thrown error text.
+ */
+export function isQuotaAuthError(error: unknown): boolean {
+  const message = messageOf(error)
+  return /\b401\b/.test(message) || /unauthenticated/i.test(message)
+}
+
 interface QuotaFetcherState {
   cache: Map<string, { groups: QuotaGroups; fetchedAt: number }>
+}
+
+/** Injectable core calls, so tests can drive the auth retry without the network. */
+export interface QuotaFetcherDependencies {
+  refreshAntigravityToken: typeof refreshAntigravityToken
+  fetchQuotaSummary: typeof fetchQuotaSummary
+  fetchAvailableModels: typeof fetchAvailableModels
+}
+
+const DEFAULT_QUOTA_FETCHER_DEPENDENCIES: QuotaFetcherDependencies = {
+  refreshAntigravityToken,
+  fetchQuotaSummary,
+  fetchAvailableModels,
 }
 
 /**
  * Default quota fetcher: in-memory per-account access-token cache, a 2-minute
  * result TTL, in-flight dedupe, and exponential error backoff (30s → 10min).
  * Access tokens stay in memory — the TUI plugin never writes the pool file.
+ *
+ * A token cached by `expires` can still be rejected by the API (revocation,
+ * clock skew, a rotated server secret). Without a forced refresh the account's
+ * quota would stay dark until the token's nominal expiry, so an auth failure
+ * drops the token and retries once before backing off.
  */
-function createDefaultQuotaFetcher(): {
+export function createDefaultQuotaFetcher(
+  deps: QuotaFetcherDependencies = DEFAULT_QUOTA_FETCHER_DEPENDENCIES,
+): {
   fetch: (account: QuotaAccountLike) => Promise<QuotaGroups | undefined>
   state: QuotaFetcherState
 } {
@@ -145,13 +180,47 @@ function createDefaultQuotaFetcher(): {
   const accessTokenFor = async (
     account: QuotaAccountLike,
     key: string,
+    force = false,
   ): Promise<string | undefined> => {
     if (!account.refreshToken) return undefined
     const cached = tokens.get(key)
-    if (cached && cached.expires > Date.now() + 60_000) return cached.access
-    const refreshed = await refreshAntigravityToken(account.refreshToken)
+    if (!force && cached && cached.expires > Date.now() + 60_000) {
+      return cached.access
+    }
+    const refreshed = await deps.refreshAntigravityToken(account.refreshToken)
     tokens.set(key, { access: refreshed.access, expires: refreshed.expires })
     return refreshed.access
+  }
+
+  /**
+   * One quota read. Prefers the windowed summary and falls back to the legacy
+   * per-model probe, but only for a non-auth failure: a rejected token fails
+   * the legacy probe too, and masking it would hide the refresh trigger.
+   */
+  const loadGroups = async (
+    account: QuotaAccountLike,
+    access: string,
+  ): Promise<QuotaGroups | undefined> => {
+    try {
+      const { summary } = await deps.fetchQuotaSummary({
+        accessToken: access,
+        endpoints: ANTIGRAVITY_ENDPOINT_FALLBACKS,
+        projectId: account.projectId,
+        managedProjectId: account.managedProjectId,
+      })
+      return aggregateQuotaSummary(summary).groups
+    } catch (error) {
+      if (isQuotaAuthError(error)) throw error
+      // Legacy contract fallback: aggregate per-model quotas from
+      // fetchAvailableModels (mirrors the OpenCode 1 adapter's order).
+      const models = await deps.fetchAvailableModels({
+        accessToken: access,
+        endpoints: ANTIGRAVITY_ENDPOINT_FALLBACKS,
+        // Empty string: the fetcher omits the project field for falsy IDs.
+        projectId: account.projectId ?? '',
+      })
+      return aggregateQuota(models.models).groups
+    }
   }
 
   const fetch = async (
@@ -168,27 +237,17 @@ function createDefaultQuotaFetcher(): {
 
     const task = (async (): Promise<QuotaGroups | undefined> => {
       try {
-        const access = await accessTokenFor(account, key)
+        let access = await accessTokenFor(account, key)
         if (!access) return cached?.groups
         let groups: QuotaGroups | undefined
         try {
-          const { summary } = await fetchQuotaSummary({
-            accessToken: access,
-            endpoints: ANTIGRAVITY_ENDPOINT_FALLBACKS,
-            projectId: account.projectId,
-            managedProjectId: account.managedProjectId,
-          })
-          groups = aggregateQuotaSummary(summary).groups
-        } catch {
-          // Legacy contract fallback: aggregate per-model quotas from
-          // fetchAvailableModels (mirrors the OpenCode 1 adapter's order).
-          const models = await fetchAvailableModels({
-            accessToken: access,
-            endpoints: ANTIGRAVITY_ENDPOINT_FALLBACKS,
-            // Empty string: the fetcher omits the project field for falsy IDs.
-            projectId: account.projectId ?? '',
-          })
-          groups = aggregateQuota(models.models).groups
+          groups = await loadGroups(account, access)
+        } catch (error) {
+          // Rejected-but-unexpired token: refresh once and retry.
+          if (!isQuotaAuthError(error)) throw error
+          access = await accessTokenFor(account, key, true)
+          if (!access) throw error
+          groups = await loadGroups(account, access)
         }
         if (groups && Object.keys(groups).length > 0) {
           state.cache.set(key, { groups, fetchedAt: Date.now() })

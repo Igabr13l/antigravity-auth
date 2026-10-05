@@ -255,6 +255,22 @@ function requestedModel(modelID: string, variant?: string): string {
   return `${modelID}-${variant}`
 }
 
+/**
+ * Stable per-request identity for the Antigravity session store.
+ *
+ * Hosts that omit `sessionID` would otherwise all collapse onto one key and
+ * share the AGY conversation/trajectory across unrelated sessions — mixing
+ * thinking signatures between conversations. Fail closed with a per-request
+ * identity instead, so anonymous requests stay isolated from each other.
+ */
+export function resolveJobSessionID(
+  sessionID: string | undefined,
+  generate: () => string,
+): string {
+  const trimmed = sessionID?.trim()
+  return trimmed ? trimmed : `anonymous:${generate()}`
+}
+
 function unwrapFrame(parsed: unknown): GeminiPayload {
   if (isRecord(parsed) && isRecord(parsed.response)) {
     return parsed.response as GeminiPayload
@@ -707,7 +723,7 @@ export function createOpenCodeV2AntigravityPlugin(
       }
 
       function requestSessionKey(job: PendingJob): string {
-        return `${job.sessionID || '__default__'}:${job.kind}`
+        return `${job.sessionID}:${job.kind}`
       }
 
       async function pickResponse(
@@ -1241,7 +1257,7 @@ export function createOpenCodeV2AntigravityPlugin(
               resolved,
               modelID: event.model.id,
               variant: event.model.variant,
-              sessionID: event.sessionID,
+              sessionID: resolveJobSessionID(event.sessionID, randomUUID),
               kind: event.kind,
               // The hook matches both endpoints; the loopback answers the streaming
               // one with SSE and the non-streaming one with a single JSON response.
