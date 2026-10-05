@@ -252,16 +252,16 @@ function familyFor(modelID: string): 'claude' | 'gemini' {
 }
 
 /**
- * The quota pool an endpoint draws from. The daily host serves the Antigravity
- * (agy CLI) pool; the production host is the Gemini CLI endpoint and draws
- * from a separate pool. Recording a rate limit under the wrong pool is what
- * made a single 429 from the production fallback block an account whose
- * Antigravity quota was still available.
+ * Only the canonical Antigravity host owns this account's quota state. The
+ * production host is the Gemini CLI endpoint — a different product's quota
+ * pool — and it is only ever tried as a fallback after the daily host fails
+ * (usually a 404 model miss or a transport timeout). A 429 from that fallback
+ * must not evict an account whose Antigravity quota is unaffected, which is
+ * what made the pool report "no account available" while the sidebar still
+ * showed available Gemini quota.
  */
-export function quotaStyleForEndpoint(
-  endpoint: string,
-): 'antigravity' | 'gemini-cli' {
-  return endpoint === ANTIGRAVITY_ENDPOINT_PROD ? 'gemini-cli' : 'antigravity'
+export function endpointOwnsAccountQuota(endpoint: string): boolean {
+  return endpoint !== ANTIGRAVITY_ENDPOINT_PROD
 }
 
 function requestedModel(modelID: string, variant?: string): string {
@@ -998,15 +998,17 @@ export function createOpenCodeV2AntigravityPlugin(
               )
               if (endpointIndex < ANTIGRAVITY_ENDPOINT_FALLBACKS.length - 1)
                 continue
-              manager.markRateLimitedWithReason(
-                account,
-                family,
-                quotaStyleForEndpoint(endpoint),
-                requested,
-                'MODEL_CAPACITY_EXHAUSTED',
-                45_000,
-                3_600_000,
-              )
+              if (endpointOwnsAccountQuota(endpoint)) {
+                manager.markRateLimitedWithReason(
+                  account,
+                  family,
+                  'antigravity',
+                  requested,
+                  'MODEL_CAPACITY_EXHAUSTED',
+                  45_000,
+                  3_600_000,
+                )
+              }
               excluded.add(account.index)
               break
             }
@@ -1015,15 +1017,19 @@ export function createOpenCodeV2AntigravityPlugin(
               const limit =
                 parseRateLimitReason(reason, '', response.status) ||
                 'RATE_LIMIT'
-              manager.markRateLimitedWithReason(
-                account,
-                family,
-                quotaStyleForEndpoint(endpoint),
-                requested,
-                limit,
-                retryAfterMs(response) ?? parseResetDelayMs(message) ?? 60_000,
-                3_600_000,
-              )
+              if (endpointOwnsAccountQuota(endpoint)) {
+                manager.markRateLimitedWithReason(
+                  account,
+                  family,
+                  'antigravity',
+                  requested,
+                  limit,
+                  retryAfterMs(response) ??
+                    parseResetDelayMs(message) ??
+                    60_000,
+                  3_600_000,
+                )
+              }
               excluded.add(account.index)
               failure = new Error(
                 `Antigravity ${response.status}${reason ? ` (${reason})` : ''}`,

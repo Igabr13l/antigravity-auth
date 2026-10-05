@@ -6,8 +6,8 @@ import type { SessionHttpRequest } from '@opencode-ai/plugin/promise/session'
 
 import plugin, {
   createOpenCodeV2AntigravityPlugin,
+  endpointOwnsAccountQuota,
   parseResetDelayMs,
-  quotaStyleForEndpoint,
   upsertOAuthAccount,
 } from '../src/plugin.ts'
 
@@ -357,20 +357,20 @@ describe('parseResetDelayMs', () => {
   })
 })
 
-describe('quotaStyleForEndpoint', () => {
-  test('maps the daily Antigravity host to the antigravity pool', () => {
+describe('endpointOwnsAccountQuota', () => {
+  test('treats the daily Antigravity host as the account quota owner', () => {
     expect(
-      quotaStyleForEndpoint('https://daily-cloudcode-pa.googleapis.com'),
-    ).toBe('antigravity')
+      endpointOwnsAccountQuota('https://daily-cloudcode-pa.googleapis.com'),
+    ).toBe(true)
   })
 
-  test('maps the production Gemini CLI host to the gemini-cli pool', () => {
-    expect(quotaStyleForEndpoint('https://cloudcode-pa.googleapis.com')).toBe(
-      'gemini-cli',
-    )
+  test('treats the production Gemini CLI host as a foreign pool', () => {
+    expect(
+      endpointOwnsAccountQuota('https://cloudcode-pa.googleapis.com'),
+    ).toBe(false)
   })
 
-  test('defaults unknown hosts to the antigravity pool', () => {
-    expect(quotaStyleForEndpoint('https://example.test')).toBe('antigravity')
+  test('treats unknown hosts as account quota owners', () => {
+    expect(endpointOwnsAccountQuota('https://example.test')).toBe(true)
   })
 })

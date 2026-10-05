@@ -206,8 +206,9 @@ describe('core AccountManager', () => {
       random: () => 0.5,
     })
     const account = manager.getAccounts()[0]!
-    // The production fallback host draws from the Gemini CLI pool. A 429 there
-    // must not take the account out of rotation for Antigravity requests.
+    // Gemini has two independent quota pools. A rate limit recorded against the
+    // Gemini CLI pool must not take the account out of rotation for Antigravity
+    // requests (and vice versa).
     manager.markRateLimitedWithReason(
       account,
       'gemini',
