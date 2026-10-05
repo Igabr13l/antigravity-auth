@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import * as net from 'node:net'
+import type * as tls from 'node:tls'
 
 import {
   buildAgyCliHeaderPairs,
+  buildResponseStream,
   ContentLengthStream,
   DEFAULT_AGY_IDLE_TIMEOUT_MS,
   DEFAULT_AGY_RESPONSE_HEADER_TIMEOUT_MS,
@@ -157,6 +159,56 @@ describe('agy transport', () => {
   it('has bounded default header and idle timeouts', () => {
     expect(DEFAULT_AGY_RESPONSE_HEADER_TIMEOUT_MS).toBe(180_000)
     expect(DEFAULT_AGY_IDLE_TIMEOUT_MS).toBe(180_000)
+  })
+
+  it('fails the body stream when the socket resets mid-body', async () => {
+    // Regression: `pipe` does not forward socket errors, so a connection reset
+    // between body chunks left the decoded stream open forever and the
+    // consumer's reader hung (the idle watchdog destroys the socket but cannot
+    // wake a pending read). Teardown must fail the body stream.
+    let peer: net.Socket | undefined
+    const server = net.createServer((socket) => {
+      peer = socket
+      socket.write('f\r\ndata: {"a":1}\n\n\r\n')
+    })
+    const port = await listen(server, '127.0.0.1')
+    try {
+      const client = net.connect(port, '127.0.0.1')
+
+      const stream = buildResponseStream(
+        client as unknown as tls.TLSSocket,
+        Buffer.alloc(0),
+        {
+          status: 200,
+          statusText: 'OK',
+          headers: new Headers(),
+          chunked: true,
+          gzip: false,
+        },
+        null,
+        5_000,
+      )
+      const reader = stream.getReader()
+      const first = await reader.read()
+      expect(first.done).toBe(false)
+
+      peer?.destroy()
+
+      const outcome = await Promise.race([
+        reader.read().then(
+          (result) => `settled done=${result.done}`,
+          (error: unknown) => `rejected: ${String(error).slice(0, 60)}`,
+        ),
+        new Promise<string>((resolve) =>
+          setTimeout(() => resolve('hung'), 2_000),
+        ),
+      ])
+      expect(outcome).not.toBe('hung')
+
+      client.destroy()
+    } finally {
+      await closeServer(server)
+    }
   })
 
   it('serializes the captured agy CLI 1.1.24 stream header contract', () => {

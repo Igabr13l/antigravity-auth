@@ -275,7 +275,10 @@ export async function* parseGeminiSse(
       yield* parseFrame(buffer)
     }
   } finally {
-    reader.releaseLock()
+    // Cancel (not releaseLock): an early consumer exit must tear down the
+    // upstream response instead of leaking the open connection, and
+    // releaseLock throws while a read is still pending.
+    await reader.cancel().catch(() => {})
   }
 }
 

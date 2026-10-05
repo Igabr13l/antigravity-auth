@@ -483,7 +483,7 @@ class ChunkedDecodeStream extends Transform {
   }
 }
 
-function buildResponseStream(
+export function buildResponseStream(
   socket: tls.TLSSocket,
   leftover: Buffer,
   head: ParsedResponseHead,
@@ -511,6 +511,26 @@ function buildResponseStream(
   if (head.gzip) {
     responseBody = responseBody.pipe(createGunzip())
   }
+
+  // `pipe` forwards neither socket errors nor a destroyed source to the piped
+  // destination, so a socket reset mid-body would leave the decoded chain open
+  // forever and the consumer's reader hanging (the idle watchdog destroys the
+  // socket but cannot wake a pending read). Fail the LAST stream of the chain
+  // — the one `Readable.toWeb` wraps — and stop the inflow. A no-error destroy
+  // does not settle a pending web read on every runtime, so always fail with
+  // an explicit error, skipped once the body already ended normally.
+  let bodyEnded = false
+  const failBody = (error?: Error): void => {
+    if (bodyEnded || responseBody.destroyed) return
+    if (!source.destroyed) source.destroy()
+    responseBody.destroy(
+      error ??
+        new Error('Antigravity response body was cut off before it finished'),
+    )
+  }
+  const onSocketClose = (): void => failBody()
+  socket.on('error', failBody)
+  socket.on('close', onSocketClose)
 
   // Idle-read watchdog: if no body bytes arrive within idleTimeoutMs, destroy
   // the socket so a hung/stalled response can't hold the connection forever.
@@ -543,6 +563,8 @@ function buildResponseStream(
   const cleanup = () => {
     clearIdle()
     socket.off('data', armIdle)
+    socket.off('error', failBody)
+    socket.off('close', onSocketClose)
     signal?.removeEventListener('abort', abort)
   }
   if (signal?.aborted) {
@@ -552,6 +574,7 @@ function buildResponseStream(
   }
 
   responseBody.once('end', () => {
+    bodyEnded = true
     cleanup()
     socket.destroy()
   })
