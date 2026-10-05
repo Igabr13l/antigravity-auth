@@ -15,6 +15,7 @@ import {
   getGemini38FlashAntigravityModel,
   getResolverAliasMap,
 } from '../model-registry.ts'
+import { isClaudeThinkingModel } from './claude.ts'
 import type {
   GoogleSearchConfig,
   ResolvedModel,
@@ -318,11 +319,12 @@ export function resolveModelWithTier(
     }
   }
 
-  // Claude 5.5 replaced the untiered Claude 4.6 routes: Antigravity now exposes
-  // `claude-{opus,sonnet}-5-5-{low,medium,high}` as distinct wire models, so the
-  // thinking tier selects the actual model. Resolve both the new 5.5 ids and the
-  // retired 4.6 ids (which transparently map to 5.5) to the tiered wire model.
-  const claude55Match = /^claude-(opus|sonnet)-(?:4-6|5-5)/i.exec(resolvedModel)
+  // Claude 5.5 wire models (claude-{opus,sonnet}-5-5-{low,medium,high}) encode
+  // the thinking tier directly in the model id. Resolve 5.5 requests to their
+  // tiered wire model (defaulting to medium if no tier is given).
+  // Claude 4.6 routes (claude-sonnet-4-6, claude-opus-4-6-thinking) remain
+  // untiered and route directly to their 4.6 wire models for standard accounts.
+  const claude55Match = /^claude-(opus|sonnet)-5-5/i.exec(resolvedModel)
   if (claude55Match && quotaPreference === 'antigravity') {
     const family = claude55Match[1]!.toLowerCase()
     const suffixTier = resolvedModel.match(TIER_REGEX)?.[1] as
@@ -346,10 +348,8 @@ export function resolveModelWithTier(
   const isEffectiveGemini3 = resolvedModel.toLowerCase().includes('gemini-3')
   const lowerModelWithoutQuota = modelWithoutQuota.toLowerCase()
   const isClaudeThinking =
-    (resolvedModel.toLowerCase().includes('claude') &&
-      resolvedModel.toLowerCase().includes('thinking')) ||
-    (lowerModelWithoutQuota.includes('claude') &&
-      lowerModelWithoutQuota.includes('thinking')) ||
+    isClaudeThinkingModel(resolvedModel) ||
+    isClaudeThinkingModel(modelWithoutQuota) ||
     lowerModelWithoutQuota === 'gemini-claude-sonnet-4-6'
 
   if (!tier) {

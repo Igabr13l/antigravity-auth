@@ -290,29 +290,20 @@ describe('resolveModelWithTier', () => {
     })
   })
 
-  describe('Retired Claude 4.6 aliases map to Claude 5.5', () => {
-    it('antigravity-claude-opus-4-6-thinking maps to the Opus 5.5 medium wire model', () => {
+  describe('Claude 4.6 and 5.5 resolution', () => {
+    it('antigravity-claude-opus-4-6-thinking maps to the Opus 4.6 wire model', () => {
       const result = resolveModelWithTier(
         'antigravity-claude-opus-4-6-thinking',
       )
-      expect(result.actualModel).toBe('claude-opus-5-5-medium')
+      expect(result.actualModel).toBe('claude-opus-4-6-thinking')
       expect(result.thinkingBudget).toBe(1024)
       expect(result.isThinkingModel).toBe(true)
       expect(result.quotaPreference).toBe('antigravity')
     })
 
-    it('respects an explicit tier on the retired opus alias', () => {
-      expect(
-        resolveModelWithTier('claude-opus-4-6-thinking-high').actualModel,
-      ).toBe('claude-opus-5-5-high')
-      expect(
-        resolveModelWithTier('claude-opus-4-6-thinking-low').actualModel,
-      ).toBe('claude-opus-5-5-low')
-    })
-
-    it('claude-sonnet-4-6 maps to the Sonnet 5.5 medium wire model', () => {
+    it('claude-sonnet-4-6 maps to the Sonnet 4.6 wire model', () => {
       const result = resolveModelWithTier('claude-sonnet-4-6')
-      expect(result.actualModel).toBe('claude-sonnet-5-5-medium')
+      expect(result.actualModel).toBe('claude-sonnet-4-6')
       expect(result.isThinkingModel).toBe(true)
       expect(result.thinkingBudget).toBe(1024)
       expect(result.quotaPreference).toBe('antigravity')
@@ -320,18 +311,42 @@ describe('resolveModelWithTier', () => {
 
     it('antigravity-claude-sonnet-4-6 maps with explicit quota', () => {
       const result = resolveModelWithTier('antigravity-claude-sonnet-4-6')
-      expect(result.actualModel).toBe('claude-sonnet-5-5-medium')
+      expect(result.actualModel).toBe('claude-sonnet-4-6')
       expect(result.isThinkingModel).toBe(true)
       expect(result.quotaPreference).toBe('antigravity')
       expect(result.explicitQuota).toBe(true)
     })
 
-    it('gemini-claude-sonnet-4-6 alias resolves to the Sonnet 5.5 route', () => {
+    it('gemini-claude-sonnet-4-6 alias resolves to the Sonnet 4.6 route', () => {
       const result = resolveModelWithTier('gemini-claude-sonnet-4-6')
-      expect(result.actualModel).toBe('claude-sonnet-5-5-medium')
+      expect(result.actualModel).toBe('claude-sonnet-4-6')
       expect(result.isThinkingModel).toBe(true)
       expect(result.thinkingBudget).toBe(1024)
       expect(result.quotaPreference).toBe('antigravity')
+    })
+
+    it('claude-opus-5-5-thinking maps to the Opus 5.5 wire models with tiers', () => {
+      expect(resolveModelWithTier('claude-opus-5-5-thinking').actualModel).toBe(
+        'claude-opus-5-5-medium',
+      )
+      expect(
+        resolveModelWithTier('claude-opus-5-5-thinking-high').actualModel,
+      ).toBe('claude-opus-5-5-high')
+      expect(
+        resolveModelWithTier('claude-opus-5-5-thinking-low').actualModel,
+      ).toBe('claude-opus-5-5-low')
+    })
+
+    it('claude-sonnet-5-5-thinking maps to the Sonnet 5.5 wire models with tiers', () => {
+      expect(
+        resolveModelWithTier('claude-sonnet-5-5-thinking').actualModel,
+      ).toBe('claude-sonnet-5-5-medium')
+      expect(
+        resolveModelWithTier('claude-sonnet-5-5-thinking-high').actualModel,
+      ).toBe('claude-sonnet-5-5-high')
+      expect(
+        resolveModelWithTier('claude-sonnet-5-5-thinking-low').actualModel,
+      ).toBe('claude-sonnet-5-5-low')
     })
   })
 
@@ -389,8 +404,8 @@ describe('resolveModelWithTier', () => {
 describe('resolveModelWithVariant', () => {
   describe('without variant config', () => {
     it('falls back to tier resolution for Claude thinking models', () => {
-      const result = resolveModelWithVariant('claude-opus-4-6-thinking-low')
-      expect(result.actualModel).toBe('claude-opus-5-5-low')
+      const result = resolveModelWithVariant('claude-sonnet-5-5-thinking-low')
+      expect(result.actualModel).toBe('claude-sonnet-5-5-low')
       expect(result.thinkingBudget).toBe(1024)
       expect(result.configSource).toBeUndefined()
     })
@@ -406,7 +421,7 @@ describe('resolveModelWithVariant', () => {
   describe('with variant config', () => {
     it('selects the Claude 5.5 wire model from the variant budget', () => {
       const result = resolveModelWithVariant(
-        'antigravity-claude-opus-4-6-thinking',
+        'antigravity-claude-opus-5-5-thinking',
         {
           thinkingBudget: 24000,
         },
@@ -456,22 +471,27 @@ describe('resolveModelWithVariant', () => {
 
   describe('backward compatibility', () => {
     it('tier-suffixed models work without variant config', () => {
-      const lowResult = resolveModelWithVariant('claude-opus-4-6-thinking-low')
+      const lowResult = resolveModelWithVariant(
+        'claude-sonnet-5-5-thinking-low',
+      )
+      expect(lowResult.actualModel).toBe('claude-sonnet-5-5-low')
       expect(lowResult.thinkingBudget).toBe(1024)
 
       const medResult = resolveModelWithVariant(
-        'claude-opus-4-6-thinking-medium',
+        'claude-sonnet-5-5-thinking-medium',
       )
+      expect(medResult.actualModel).toBe('claude-sonnet-5-5-medium')
       expect(medResult.thinkingBudget).toBe(1024)
 
       const highResult = resolveModelWithVariant(
-        'claude-opus-4-6-thinking-high',
+        'claude-sonnet-5-5-thinking-high',
       )
+      expect(highResult.actualModel).toBe('claude-sonnet-5-5-high')
       expect(highResult.thinkingBudget).toBe(1024)
     })
 
     it('variant config selects a Claude 5.5 tier instead of a raw budget', () => {
-      const result = resolveModelWithVariant('claude-opus-4-6-thinking-low', {
+      const result = resolveModelWithVariant('claude-opus-5-5-thinking-low', {
         thinkingBudget: 50000,
       })
       expect(result.actualModel).toBe('claude-opus-5-5-high')
@@ -599,9 +619,9 @@ describe('Issue #103: resolveModelForHeaderStyle', () => {
       expect(cli.actualModel).toBe('gemini-2.5-flash')
     })
 
-    it('routes claude models through the Claude 5.5 wire models (antigravity only)', () => {
+    it('routes claude 5.5 models through the Claude 5.5 wire models (antigravity only)', () => {
       const result = resolveModelForHeaderStyle(
-        'claude-opus-4-6-thinking',
+        'claude-opus-5-5-thinking',
         'antigravity',
       )
       expect(result.actualModel).toBe('claude-opus-5-5-medium')

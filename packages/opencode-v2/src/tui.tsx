@@ -600,7 +600,7 @@ export function createOpenCodeV2AntigravityTui(
       try {
         claims.push(
           ctx.ui.slot({
-            append: 'sidebar.footer',
+            prepend: 'sidebar.footer',
             render: () => {
               // Both slots retry the bind: the layer needs a component scope,
               // so whichever surface the host mounts first wins. Binding from

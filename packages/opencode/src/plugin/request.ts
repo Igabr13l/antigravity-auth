@@ -1662,10 +1662,10 @@ export function prepareAntigravityRequest(
                   ? 'medium'
                   : 'high'
             tierThinkingBudget = undefined
-          } else if (/claude-(opus|sonnet)-(?:4-6|5-5)/i.test(effectiveModel)) {
-            // Claude 5.5 (and the retired 4.6 aliases) encode the thinking tier
-            // in the wire model id, so the selected variant re-resolves to a
-            // distinct model instead of only adjusting a numeric budget.
+          } else if (/claude-(opus|sonnet)-5-5/i.test(effectiveModel)) {
+            // Claude 5.5 encodes the thinking tier in the wire model id, so
+            // the selected variant re-resolves to a distinct model instead of
+            // only adjusting a numeric budget.
             const claudeTier: 'low' | 'medium' | 'high' =
               variantConfig.thinkingBudget <= 8192
                 ? 'low'

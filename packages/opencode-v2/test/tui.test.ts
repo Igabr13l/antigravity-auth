@@ -60,7 +60,7 @@ function stubContext() {
     ui: {
       slot: (claim: Record<string, unknown>) => {
         claims.push({
-          target: String(claim.append),
+          target: String(claim.append || claim.prepend),
           render: claim.render as (input: unknown) => unknown,
         })
         return () => {}
@@ -385,7 +385,7 @@ describe('OpenCode 2 Antigravity TUI plugin', () => {
         throw new Error('slot unavailable')
       }
       claims.push({
-        target: String(claim.append),
+        target: String(claim.append || claim.prepend),
         render: claim.render as (input: unknown) => unknown,
       })
       return () => {}
