@@ -85,9 +85,9 @@ describe('OpenCode 2 Antigravity request envelope', () => {
       thinkingBudget: 1024,
     })
     expect(generationConfig?.maxOutputTokens).toBe(64_000)
-    expect(
-      envelope.request.contents?.[0]?.parts?.[0]?.thoughtSignature,
-    ).toBeUndefined()
+    // The thinking part is neutralized rather than left as an unsigned
+    // thinking block for the Claude bridge to reject.
+    expect(envelope.request.contents?.[0]?.parts).toEqual([{ text: '.' }])
     expect(
       (
         envelope.request.toolConfig?.functionCallingConfig as
@@ -136,7 +136,7 @@ describe('OpenCode 2 Antigravity request envelope', () => {
     ])
   })
 
-  it('injects the supported sentinel when Claude replay has no valid signature', () => {
+  it('leaves Claude function calls unsigned instead of injecting the Gemini skip sentinel', () => {
     const payload = {
       contents: [
         {
@@ -162,9 +162,12 @@ describe('OpenCode 2 Antigravity request envelope', () => {
       'project-claude',
       scopeForRequest(),
     )
-    expect(envelope.request.contents?.[0]?.parts?.[0]?.thoughtSignature).toBe(
-      SKIP_THOUGHT_SIGNATURE,
-    )
+    // The skip sentinel is a Gemini-only affordance; on the Claude path it
+    // becomes an invalid thinking signature. Without a same-model replay flag
+    // the foreign signature is just dropped, never replaced by the sentinel.
+    expect(
+      envelope.request.contents?.[0]?.parts?.[0]?.thoughtSignature,
+    ).toBeUndefined()
 
     const sameModelEnvelope = buildEnvelope(
       payload,
@@ -176,6 +179,67 @@ describe('OpenCode 2 Antigravity request envelope', () => {
     expect(
       sameModelEnvelope.request.contents?.[0]?.parts?.[0]?.thoughtSignature,
     ).toBe('c'.repeat(64))
+  })
+
+  it('injects the skip sentinel on unsigned Gemini function calls', () => {
+    const payload = {
+      contents: [
+        {
+          role: 'model',
+          parts: [
+            { functionCall: { name: 'read_file', args: { path: 'a.ts' } } },
+          ],
+        },
+        { role: 'user', parts: [{ text: 'continue' }] },
+      ],
+    }
+    const resolved = resolveModelForHeaderStyle(
+      'gemini-3.8-flash-medium',
+      'antigravity',
+    )
+
+    const envelope = buildEnvelope(
+      payload,
+      resolved,
+      'project-gemini',
+      scopeForRequest(),
+    )
+    expect(envelope.request.contents?.[0]?.parts?.[0]?.thoughtSignature).toBe(
+      SKIP_THOUGHT_SIGNATURE,
+    )
+  })
+
+  it('neutralizes a foreign Anthropic-style thinking block for Claude', () => {
+    const payload = {
+      contents: [
+        { role: 'user', parts: [{ text: 'hi' }] },
+        {
+          role: 'model',
+          parts: [
+            {
+              type: 'thinking',
+              thinking: 'foreign reasoning',
+              signature: 'foreign-claude-signature',
+            },
+            { type: 'text', text: 'answer' },
+          ],
+        },
+      ],
+    }
+    const resolved = resolveModelForHeaderStyle(
+      'claude-sonnet-5-5-medium',
+      'antigravity',
+    )
+
+    const envelope = buildEnvelope(
+      payload,
+      resolved,
+      'project-claude',
+      scopeForRequest(),
+    )
+    const parts = envelope.request.contents?.[1]?.parts ?? []
+    expect(parts.some((part) => 'signature' in part)).toBe(false)
+    expect(parts[0]).toEqual({ text: '.' })
   })
 
   it('uses the native model role for same-target function responses', () => {

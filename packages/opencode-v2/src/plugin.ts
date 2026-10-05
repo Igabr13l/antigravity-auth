@@ -458,6 +458,54 @@ function ensureFunctionCallSignatures(request: GeminiPayload): void {
   }
 }
 
+/**
+ * Whether a part carries thinking: either the Gemini shape (`thought: true`,
+ * with an optional `thoughtSignature`) or an Anthropic-style block
+ * (`type: thinking`/`redacted_thinking`/`reasoning` with a `signature`). The
+ * snake_case `thought_signature` is handled too, since the host has emitted it.
+ */
+function isThinkingPart(part: GeminiPart): boolean {
+  return (
+    part.thought === true ||
+    part.type === 'thinking' ||
+    part.type === 'redacted_thinking' ||
+    part.type === 'reasoning' ||
+    part.thinking !== undefined ||
+    part.signature !== undefined ||
+    part.thought_signature !== undefined
+  )
+}
+
+function isToolPart(part: GeminiPart): boolean {
+  return part.functionCall !== undefined || part.functionResponse !== undefined
+}
+
+/**
+ * Claude generates fresh thinking each turn, and the Antigravity Claude bridge
+ * rejects a replayed thinking block whose signature it cannot validate
+ * (`Invalid 'signature' in 'thinking' block`) or that arrives without one
+ * (`thinking.signature: Field required`). Stripping the signature alone is not
+ * enough — the signature-less part still becomes a thinking block. Replace every
+ * thinking part with a neutral text part (the same approach the OpenCode 1
+ * adapter takes), preserving any `cache_control` breakpoint. Tool parts are left
+ * untouched: a signed `functionCall` is the same-model replay path.
+ */
+function stripClaudeThinkingParts(request: GeminiPayload): void {
+  for (const content of request.contents ?? []) {
+    if (!Array.isArray(content.parts)) continue
+    content.parts = content.parts.map((part) => {
+      if (!isRecord(part)) return part
+      const typed = part as GeminiPart
+      if (isToolPart(typed) || !isThinkingPart(typed)) return part
+      const sentinel: GeminiPart = { text: '.' }
+      if (typed.cache_control !== undefined) {
+        sentinel.cache_control = typed.cache_control
+      }
+      return sentinel
+    })
+  }
+}
+
 function ensureTrailingUserTurn(request: GeminiPayload): void {
   if (!Array.isArray(request.contents) || request.contents.length === 0) return
   const last = request.contents.at(-1)
@@ -564,6 +612,9 @@ export function buildEnvelope(
           : {}),
       }
     }
+    // Replayed thinking blocks cannot be validated by the Claude bridge; the
+    // model regenerates thinking each turn anyway (see AGENTS.md).
+    stripClaudeThinkingParts(request)
   } else {
     normalizeGeminiTools(request, {
       moveNumericConstraintsToDescription: isGpt,
@@ -583,7 +634,10 @@ export function buildEnvelope(
         }
       }
     }
-    ensureFunctionCallSignatures(request)
+    // The skip sentinel is a Gemini-only affordance. On the Claude path it
+    // becomes the signature of a synthesized thinking block and is rejected as
+    // invalid, so leave unsigned function calls unsigned there.
+    if (!isClaude) ensureFunctionCallSignatures(request)
   }
   ensureTrailingUserTurn(request)
 
@@ -726,6 +780,24 @@ export function createOpenCodeV2AntigravityPlugin(
         return `${job.sessionID}:${job.kind}`
       }
 
+      /**
+       * Record the model a session last completed a turn with. This gates the
+       * function-call signature replay, so only a dispatched turn may update it:
+       * recording before the send would let a retry inside the same request see
+       * its own model as "last" and replay foreign signatures.
+       */
+      function rememberLastModel(sessionKey: string, model: string): void {
+        if (
+          !lastModelBySession.has(sessionKey) &&
+          lastModelBySession.size >= 256
+        ) {
+          const oldestKey = lastModelBySession.keys().next().value
+          if (oldestKey) lastModelBySession.delete(oldestKey)
+        }
+        lastModelBySession.delete(sessionKey)
+        lastModelBySession.set(sessionKey, model)
+      }
+
       async function pickResponse(
         job: PendingJob,
         signal?: AbortSignal,
@@ -783,15 +855,6 @@ export function createOpenCodeV2AntigravityPlugin(
                 lastModelBySession.get(sessionKey) === job.resolved.actualModel,
             },
           )
-          if (
-            !lastModelBySession.has(sessionKey) &&
-            lastModelBySession.size >= 256
-          ) {
-            const oldestKey = lastModelBySession.keys().next().value
-            if (oldestKey) lastModelBySession.delete(oldestKey)
-          }
-          lastModelBySession.delete(sessionKey)
-          lastModelBySession.set(sessionKey, job.resolved.actualModel)
 
           // A forced refresh happens at most once per account/request; if the
           // endpoint still answers 401 afterwards the account is excluded and the
@@ -826,6 +889,7 @@ export function createOpenCodeV2AntigravityPlugin(
             )
 
             if (response.ok) {
+              rememberLastModel(sessionKey, job.resolved.actualModel)
               manager.markRequestSuccess(account)
               manager.markAccountUsed(account.index)
               manager.recordRequest(account.index, family)
