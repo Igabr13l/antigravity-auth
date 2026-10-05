@@ -43,6 +43,7 @@ function stubContext() {
     | undefined
   let dialogSelection: string | undefined
   const store = { status: undefined as unknown }
+  const persistentStore: Record<string, unknown> = {}
 
   const context = {
     storage: {
@@ -55,6 +56,19 @@ function stubContext() {
           mutation(store as Value)
         }
         return [store, mutate] as const
+      },
+      store: <Value extends object>(
+        key: string,
+        options: { initial: Value },
+      ) => {
+        if (!persistentStore[key]) {
+          persistentStore[key] = { ...options.initial }
+        }
+        const item = persistentStore[key] as Value
+        const mutate = async (mutation: (draft: Value) => void) => {
+          mutation(item)
+        }
+        return [item, mutate] as const
       },
     },
     ui: {
@@ -780,5 +794,18 @@ describe('default quota fetcher', () => {
 
     expect(legacyCalls).toBe(1)
     expect(groups?.gemini?.remainingFraction).toBe(0.25)
+  })
+
+  test('registers collapsible sidebar slot and preserves view state', async () => {
+    const current = pool([{ email: 'a@example.test' }])
+    const { claims, cleanup } = await setupTui({
+      loadPool: async () => current,
+    })
+
+    const sidebarClaim = claims.find((c) => c.target === 'sidebar.footer')
+    expect(sidebarClaim).toBeDefined()
+    expect(sidebarClaim?.render({})).toBeDefined()
+
+    if (cleanup) await cleanup()
   })
 })

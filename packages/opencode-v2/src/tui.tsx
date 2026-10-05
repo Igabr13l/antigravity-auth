@@ -314,6 +314,29 @@ export function createOpenCodeV2AntigravityTui(
         'antigravity-pool',
         { initial: { status: undefined } },
       )
+      const [viewState, setViewState] = ctx.storage.store
+        ? ctx.storage.store<{ open: boolean }>('antigravity-sidebar-view', {
+            initial: { open: true },
+          })
+        : ctx.storage.memory<{ open: boolean }>('antigravity-sidebar-view', {
+            initial: { open: true },
+          })
+      let lastToggleTime = 0
+      const toggleOpen = (): void => {
+        const currentTime = Date.now()
+        if (currentTime - lastToggleTime < 300) return
+        lastToggleTime = currentTime
+        try {
+          const res: unknown = setViewState((draft) => {
+            draft.open = !(draft.open ?? true)
+          })
+          if (res instanceof Promise) {
+            res.catch(() => {})
+          }
+        } catch {
+          // Best-effort toggle
+        }
+      }
       let previous: AccountPoolStatus | undefined
       let keymapBound = false
       let disposed = false
@@ -608,7 +631,12 @@ export function createOpenCodeV2AntigravityTui(
               // fails to register.
               bindKeymap()
               try {
-                return detailElement(state.status, dependencies.now())
+                return detailElement(
+                  state.status,
+                  dependencies.now(),
+                  viewState.open ?? true,
+                  toggleOpen,
+                )
               } catch {
                 return 'AGY'
               }
@@ -647,22 +675,47 @@ function summaryElement(status: AccountPoolStatus | undefined) {
   return <text>{formatPoolSummaryLine(status)}</text>
 }
 
-function detailElement(status: AccountPoolStatus | undefined, now: number) {
+function detailElement(
+  status: AccountPoolStatus | undefined,
+  now: number,
+  open: boolean = true,
+  toggle?: () => void,
+) {
   if (!status || status.accounts.length === 0) {
     return <text>AGY: no accounts</text>
   }
-  const rows: SidebarRow[] = [{ text: '▼ Antigravity', fg: '#94a3b8' }]
-  status.accounts.forEach((account, idx) => {
-    rows.push(...sidebarRows(account, now, activeFamiliesFor(status, account)))
-    if (idx < status.accounts.length - 1) {
-      rows.push({ text: ' ' })
-    }
-  })
+  const glyph = open ? '▼' : '▶'
+  const summary =
+    status.ready === status.total
+      ? `${status.total} ready`
+      : `${status.ready}/${status.total} ready`
+
+  const rows: SidebarRow[] = []
+  if (open) {
+    status.accounts.forEach((account, idx) => {
+      rows.push(
+        ...sidebarRows(account, now, activeFamiliesFor(status, account)),
+      )
+      if (idx < status.accounts.length - 1) {
+        rows.push({ text: ' ' })
+      }
+    })
+  }
+
   return (
     <box flexDirection='column'>
-      {rows.map((row) => (
-        <text fg={row.fg}>{row.text}</text>
-      ))}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: opentui renders to a terminal, not the DOM — ARIA roles do not apply */}
+      <box flexDirection='row' gap={1} onMouseDown={toggle} onMouseUp={toggle}>
+        <text fg='#94a3b8'>{glyph} Antigravity</text>
+        {!open && <text fg='#64748b'>({summary})</text>}
+      </box>
+      {open && (
+        <box flexDirection='column'>
+          {rows.map((row) => (
+            <text fg={row.fg}>{row.text}</text>
+          ))}
+        </box>
+      )}
     </box>
   )
 }
