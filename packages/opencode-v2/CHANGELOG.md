@@ -7,7 +7,8 @@
 - Enhanced sidebar account rows to match OpenCode's native MCP styling:
   - Masked emails are now rendered in bold theme text base (`theme.text.base`), with status indicated solely by a semantic bullet (`•` green for ready, `◐` amber for rate-limited, `✕` red for ineligible, `⊝` slate for disabled).
   - Multi-family active routing is now indicated directly on the family quota rows with `▸ G` and `▸ C` instead of turning the entire account blue and showing ambiguous duplicate `●` bullets across multiple accounts.
-  - Eliminated identity line wrapping by omitting redundant cooldown text from the account header when quota bars are present; the cooling family's bar already displays 0% and the exact replenishment countdown (`(↻ Xd Yh)`). Account-wide blocks without quota bars continue to show their cooldown duration cleanly.
+  - Eliminated identity line wrapping by omitting the cooldown text from the account header when an exhausted quota bar already shows 0% and the exact replenishment countdown (`(↻ Xd Yh)`). Account-wide cooldowns (`auth-failure`, `network-error`, `project-error`, `validation-required`) and cooldowns with no exhausted bar (short 429 backoffs, stale cached quota) keep the `Cooldown <duration>` badge so an amber glyph is never unexplained.
+  - A family that is active on an account but has no quota bar is named in an `active: <families>` badge, so the `▸` marker can never go missing.
 - Moved the sidebar slot contribution from `sidebar.footer` to `sidebar.content`: the Antigravity pool section now renders directly below Context and MCP inside the main sidebar flow without leaving a large empty gap in the middle. The working directory indicator (`~`) remains cleanly pinned at the bottom footer.
 - Updated the `▼ Antigravity` section header typography to match OpenCode's native `MCP` section: rendered in theme base text (`theme.text.base`) and bold (`<b>Antigravity</b>`) instead of muted slate gray (`#94a3b8`), with collapsed summaries in `theme.text.muted`.
 - Made the sidebar's `▼ Antigravity` section collapsible: clicking on the header row now toggles between expanded (`▼ Antigravity`) and collapsed (`▶ Antigravity (N ready)`), hiding the per-account lines and persisting the open/closed state across sessions.
@@ -19,6 +20,7 @@
 
 ### Fixed
 
+- Fixed `parseResetDelayMs` reading a millisecond window as minutes (`Resets in 500ms` became ~8 hours of cooldown because `ms` matched as `m`). Millisecond units are now parsed explicitly.
 - Fixed Claude 4.6 routes (`claude-sonnet-4-6-thinking`, `claude-opus-4-6-thinking`) being unconditionally rewritten to Claude 5.5 wire models (`claude-{opus,sonnet}-5-5-medium`). Standard/free accounts have not been migrated to Claude 5.5 by Google (5.5 returns 404 on daily and 429 on prod for standard tiers), while Claude 4.6 remains active and working for them. Claude 4.6 requests now route directly to their native 4.6 wire models without rewriting to 5.5, allowing standard accounts to use their available Claude credits.
 
 - Fixed an account whose quota window is exhausted being retried on every request: Antigravity answers `429 QUOTA_EXHAUSTED` with the reset in the message text (`Resets in 58h13m57s.`) and no `Retry-After` header, so the bridge fell back to a 60s cooldown and wasted a request on a guaranteed 429 each minute (visible in the log as a 429 on the same account before each success on the next). The reset window is now parsed from the message and used as the cooldown.

@@ -342,6 +342,11 @@ describe('parseResetDelayMs', () => {
     expect(parseResetDelayMs('resets in 45m')).toBe(45 * 60_000)
   })
 
+  test('reads millisecond windows instead of mistaking them for minutes', () => {
+    expect(parseResetDelayMs('Resets in 500ms.')).toBe(500)
+    expect(parseResetDelayMs('Resets in 1m 30s 250ms')).toBe(90_250)
+  })
+
   test('returns undefined when the message carries no reset window', () => {
     expect(
       parseResetDelayMs('Resource has been exhausted (e.g. check quota).'),

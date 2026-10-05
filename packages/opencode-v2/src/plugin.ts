@@ -397,11 +397,20 @@ export function parseResetDelayMs(
   message: string | undefined,
 ): number | undefined {
   if (!message) return undefined
-  const match = /resets?\s+in\s+((?:\d+(?:\.\d+)?\s*[dhms]\s*)+)/i.exec(message)
+  // `ms` must be tried before `m`, otherwise `500ms` reads as 500 minutes.
+  const match = /resets?\s+in\s+((?:\d+(?:\.\d+)?\s*(?:ms|d|h|m|s)\s*)+)/i.exec(
+    message,
+  )
   if (!match?.[1]) return undefined
-  const unit = { d: 86_400_000, h: 3_600_000, m: 60_000, s: 1_000 } as const
+  const unit = {
+    d: 86_400_000,
+    h: 3_600_000,
+    m: 60_000,
+    s: 1_000,
+    ms: 1,
+  } as const
   let total = 0
-  for (const part of match[1].matchAll(/(\d+(?:\.\d+)?)\s*([dhms])/gi)) {
+  for (const part of match[1].matchAll(/(\d+(?:\.\d+)?)\s*(ms|d|h|m|s)/gi)) {
     const key = part[2]?.toLowerCase() as keyof typeof unit
     total += Number(part[1]) * unit[key]
   }

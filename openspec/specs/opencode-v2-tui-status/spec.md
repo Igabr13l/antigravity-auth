@@ -63,7 +63,12 @@ The sidebar lines and the accounts dialog SHALL show, when quota data is
 available, each account's remaining usage per family (e.g. `Gemini 78%`,
 `Non-Gemini LOW 15%`), collapse exhausted groups with a known reset into
 `exhausted (resets <duration>)`, hide fully saturated groups, and mark which
-account is currently active per family (`active: <families>`). Quota SHALL be
+account is currently active per family: with quota bars the family's first bar
+row carries a `▸` marker, and a family with no bar is named in an
+`active: <families>` badge on the account line. The account glyph SHALL reflect
+account health only (never the active marker), and the account line SHALL carry
+a `Cooldown <duration>` badge unless an exhausted quota bar already shows the
+reason and reset time (account-wide cooldowns always keep the badge). Quota SHALL be
 fetched out-of-band with in-memory caching (results reused for at least a
 minute), in-flight dedupe and error backoff, so the pool poll never waits on
 the API; access tokens and quota aggregates stay in memory and are never

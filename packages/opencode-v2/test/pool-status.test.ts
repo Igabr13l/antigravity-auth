@@ -790,6 +790,78 @@ describe('formatting', () => {
     ])
   })
 
+  test('sidebar rows: keeps the cooldown text when no exhausted bar explains it', () => {
+    // A short per-family 429 backoff while cached quota still reads 100%:
+    // dropping the badge would leave an amber glyph with no explanation.
+    const status = summarizeAccountPool(
+      pool([
+        {
+          email: 'a@example.test',
+          enabled: true,
+          rateLimitResetTimes: { claude: NOW + 60_000 },
+        },
+      ]),
+      NOW,
+    )
+    const withQuota = attachQuota(
+      status,
+      new Map([
+        [
+          status.accounts[0]!.key,
+          { 'non-gemini': { remainingFraction: 1, modelCount: 1 } },
+        ],
+      ]),
+    )
+    const rows = sidebarRows(withQuota.accounts[0]!, NOW)
+    expect(rows[0]?.badge).toBe('Cooldown 1m')
+    expect(rows[0]?.text).toBe('◐ a***@example.test · Cooldown 1m')
+  })
+
+  test('sidebar rows: account-wide cooldown reasons always keep the badge', () => {
+    const status = summarizeAccountPool(
+      pool([
+        {
+          email: 'a@example.test',
+          enabled: true,
+          coolingDownUntil: NOW + 600_000,
+          cooldownReason: 'auth-failure',
+        },
+      ]),
+      NOW,
+    )
+    const withQuota = attachQuota(
+      status,
+      new Map([
+        [
+          status.accounts[0]!.key,
+          { gemini: { remainingFraction: 0, modelCount: 1 } },
+        ],
+      ]),
+    )
+    expect(sidebarRows(withQuota.accounts[0]!, NOW)[0]?.badge).toBe(
+      'Cooldown 10m',
+    )
+  })
+
+  test('sidebar rows: an active family without a bar is still labelled', () => {
+    const status = summarizeAccountPool(
+      pool([{ email: 'a@example.test', enabled: true }]),
+      NOW,
+    )
+    const withQuota = attachQuota(
+      status,
+      new Map([
+        [
+          status.accounts[0]!.key,
+          { gemini: { remainingFraction: 0.5, modelCount: 1 } },
+        ],
+      ]),
+    )
+    const rows = sidebarRows(withQuota.accounts[0]!, NOW, ['claude', 'gemini'])
+    expect(rows[0]?.badge).toBe('active: C')
+    expect(rows[1]?.text.startsWith('▸ G')).toBe(true)
+  })
+
   test('formats multi-day resets in days', () => {
     expect(
       formatResetIn(new Date(NOW + 59 * 3_600_000).toISOString(), NOW),

@@ -517,19 +517,37 @@ export function accountStateColor(
   }
 }
 
-function hasQuotaBars(account: AccountStatus): boolean {
-  if (!account.quota) return false
+type QuotaFamily = 'gemini' | 'non-gemini'
+
+/** Cooldown keys that block the whole account rather than one quota family. */
+const ACCOUNT_WIDE_COOLDOWNS: ReadonlySet<string> = new Set([
+  'account',
+  'auth-failure',
+  'network-error',
+  'project-error',
+  'validation-required',
+])
+
+/** Fractions of every bar `sidebarRows` will draw, grouped by family. */
+function quotaBarFractions(
+  account: AccountStatus,
+): Partial<Record<QuotaFamily, number[]>> {
+  const result: Partial<Record<QuotaFamily, number[]>> = {}
   for (const family of ['gemini', 'non-gemini'] as const) {
-    const group = account.quota[family]
-    if (group?.windows && group.windows.length > 0) return true
-    if (
+    const group = account.quota?.[family]
+    const windows = group?.windows
+    if (windows && windows.length > 0) {
+      result[family] = windows.map((entry) =>
+        clampFraction(entry.remainingFraction),
+      )
+    } else if (
       typeof group?.remainingFraction === 'number' &&
       Number.isFinite(group.remainingFraction)
     ) {
-      return true
+      result[family] = [clampFraction(group.remainingFraction)]
     }
   }
-  return false
+  return result
 }
 
 function clampFraction(fraction: number): number {
@@ -590,8 +608,29 @@ export function sidebarRows(
   now: number,
   activeFamilies: readonly string[] = [],
 ): SidebarRow[] {
-  const hasQuota = hasQuotaBars(account)
-  const isAccountWideCooldown = account.coolingFamilies.includes('account')
+  const fractions = quotaBarFractions(account)
+  const isAccountWideCooldown = account.coolingFamilies.some((family) =>
+    ACCOUNT_WIDE_COOLDOWNS.has(family),
+  )
+  // An exhausted bar already says why the account is limited and when it
+  // resets. A cooldown with no exhausted bar (a short 429 backoff, capacity
+  // errors, stale cached quota) has no other explanation on screen.
+  const cooldownExplainedByBar = Object.values(fractions).some((values) =>
+    values.some((value) => value <= 0),
+  )
+  const activeWithoutBars = (
+    [
+      ['gemini', 'G', activeFamilies.includes('gemini')],
+      [
+        'non-gemini',
+        'C',
+        activeFamilies.includes('claude') ||
+          activeFamilies.includes('non-gemini'),
+      ],
+    ] as const
+  )
+    .filter(([family, , active]) => active && !fractions[family])
+    .map(([, label]) => label)
 
   const glyph = SIDEBAR_GLYPH[account.state]
   const glyphFg = accountStateColor(account.state, false)
@@ -601,10 +640,7 @@ export function sidebarRows(
   let badgeFg: string | undefined
 
   if (account.state === 'rate-limited') {
-    // Only show cooldown text in identity if there are no quota bars
-    // or if this is an account-wide block not reflected in family quota bars.
-    // When quota bars exist, the family bar already shows the exact reset time.
-    if (!hasQuota || isAccountWideCooldown) {
+    if (isAccountWideCooldown || !cooldownExplainedByBar) {
       badge = `Cooldown ${formatCooldown(account.cooldownUntil, now)}`
       badgeFg = '#fbbf24'
     }
@@ -617,12 +653,10 @@ export function sidebarRows(
   } else if (account.state === 'disabled') {
     badge = 'DISABLED'
     badgeFg = '#64748b'
-  } else if (!hasQuota && activeFamilies.length > 0) {
-    const activeLabels = activeFamilies
-      .map((f) => (f === 'gemini' ? 'G' : 'C'))
-      .sort()
-      .join(', ')
-    badge = `active: ${activeLabels}`
+  } else if (activeWithoutBars.length > 0) {
+    // The `▸` marker lives on a bar row; a family with no bar still needs
+    // to show that traffic is routed here.
+    badge = `active: ${activeWithoutBars.join(', ')}`
     badgeFg = ACTIVE_BLUE
   }
 
