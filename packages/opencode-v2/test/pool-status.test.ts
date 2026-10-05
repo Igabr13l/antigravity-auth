@@ -24,8 +24,8 @@ const NOW = 1_000_000
 function pool(accounts: Array<Record<string, unknown>>): AccountStorageV4 {
   return {
     version: 4,
-    accounts: accounts.map((account) => ({
-      refreshToken: 'refresh',
+    accounts: accounts.map((account, i) => ({
+      refreshToken: `refresh-${i}`,
       addedAt: 1,
       lastUsed: 1,
       ...account,
@@ -176,11 +176,24 @@ describe('summarizeAccountPool', () => {
     expect(accountKey(other!, 0)).toBe(key)
   })
 
-  test('falls back to an index key for an account with no email', () => {
-    const status = summarizeAccountPool(pool([{}, {}]), NOW)
+  test('falls back to a token-hash key for an account with no email', () => {
+    const status = summarizeAccountPool(
+      pool([{ refreshToken: 'tok-a' }, { refreshToken: 'tok-b' }]),
+      NOW,
+    )
+    expect(status.accounts[0]?.key).toMatch(/^t:/)
+    expect(status.accounts[1]?.key).toMatch(/^t:/)
+    expect(status.accounts[0]?.key).not.toBe(status.accounts[1]?.key)
+    expect(status.accounts[0]?.maskedEmail).toBeUndefined()
+  })
+
+  test('falls back to positional key when no refreshToken either', () => {
+    const status = summarizeAccountPool(
+      pool([{ refreshToken: undefined }, { refreshToken: undefined }]),
+      NOW,
+    )
     expect(status.accounts[0]?.key).toBe('#0')
     expect(status.accounts[1]?.key).toBe('#1')
-    expect(status.accounts[0]?.maskedEmail).toBeUndefined()
   })
 
   test('expires cooldowns in the past and keeps v4 family indexes', () => {
@@ -299,13 +312,21 @@ describe('diffAccountPoolStatus', () => {
     expect(diffAccountPoolStatus(undefined, after)).toEqual([])
   })
 
-  test('suppresses transitions for positionally-keyed accounts', () => {
-    // Address-less accounts key by index, which shifts with membership; a diff
-    // must not attribute the removed account's state to whichever account
-    // inherited its position.
-    const before = summarizeAccountPool(pool([{}, { enabled: false }]), NOW)
-    const after = summarizeAccountPool(pool([{ enabled: false }]), NOW)
-    expect(after.accounts[0]?.key).toBe('#0')
+  test('attributes transitions for token-keyed accounts (no email)', () => {
+    // Address-less accounts key by refreshToken hash — stable across
+    // reorder — so a positional shift between polls is correctly diffed.
+    const before = summarizeAccountPool(
+      pool([
+        { refreshToken: 'tok-a' },
+        { enabled: false, refreshToken: 'tok-b' },
+      ]),
+      NOW,
+    )
+    const after = summarizeAccountPool(
+      pool([{ enabled: false, refreshToken: 'tok-b' }]),
+      NOW,
+    )
+    expect(after.accounts[0]?.key).toMatch(/^t:/)
     expect(diffAccountPoolStatus(before, after)).toEqual([])
   })
 

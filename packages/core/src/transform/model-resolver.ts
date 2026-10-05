@@ -327,9 +327,12 @@ export function resolveModelWithTier(
   const claude55Match = /^claude-(opus|sonnet)-5-5/i.exec(resolvedModel)
   if (claude55Match && quotaPreference === 'antigravity') {
     const family = claude55Match[1]!.toLowerCase()
-    const suffixTier = resolvedModel.match(TIER_REGEX)?.[1] as
-      | ThinkingTier
-      | undefined
+    const rawSuffix = resolvedModel.match(TIER_REGEX)?.[1]
+    // Claude 5.5 wire models use low/medium/high — no minimal tier.
+    const suffixTier: ThinkingTier | undefined =
+      rawSuffix === 'minimal'
+        ? 'medium'
+        : (rawSuffix as ThinkingTier | undefined)
     const selectedTier: ThinkingTier = tier ?? suffixTier ?? 'medium'
     return {
       actualModel:

@@ -121,9 +121,21 @@ function emailOf(account: PoolAccount): string | undefined {
  */
 export function accountKey(account: PoolAccount, index: number): string {
   const email = emailOf(account)
-  if (!email) return `#${index}`
-  const digest = createHash('sha256').update(email.toLowerCase()).digest('hex')
-  return `e:${digest.slice(0, 12)}`
+  if (email) {
+    const digest = createHash('sha256')
+      .update(email.toLowerCase())
+      .digest('hex')
+    return `e:${digest.slice(0, 12)}`
+  }
+  // Fallback: hash the refresh token prefix (stable across pool reordering,
+  // unlike `#${index}` which is positional). Refresh token is always present
+  // in a valid stored account.
+  const token = account.refreshToken
+  if (token) {
+    const digest = createHash('sha256').update(token.slice(0, 16)).digest('hex')
+    return `t:${digest.slice(0, 12)}`
+  }
+  return `#${index}`
 }
 
 function resetsOf(account: PoolAccount): Record<string, number | undefined> {

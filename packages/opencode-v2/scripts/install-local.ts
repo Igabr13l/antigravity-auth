@@ -31,7 +31,10 @@ const CORE_ROOT = resolve(PACKAGE_ROOT, '../core')
 const CORE_DIST = join(CORE_ROOT, 'dist')
 const PLUGIN_ID = 'antigravity-auth'
 const CONFIG_DIR =
-  process.env.OPENCODE_CONFIG_DIR ?? join(homedir(), '.config', 'opencode')
+  process.env.OPENCODE_CONFIG_DIR ??
+  (process.env.XDG_CONFIG_HOME?.trim()
+    ? join(process.env.XDG_CONFIG_HOME.trim(), 'opencode')
+    : join(homedir(), '.config', 'opencode'))
 const TARGET = join(CONFIG_DIR, 'plugins', PLUGIN_ID)
 const CORE_TARGET = join(
   CONFIG_DIR,
@@ -65,11 +68,17 @@ console.log(
   `Copied ${copied} module(s); server entry = index.ts, TUI entry = tui.ts.`,
 )
 
-if (existsSync(CORE_DIST) && existsSync(CORE_TARGET)) {
-  const coreDistTarget = join(CORE_TARGET, 'dist')
-  rmSync(coreDistTarget, { recursive: true, force: true })
-  cpSync(CORE_DIST, coreDistTarget, { recursive: true })
-  console.log(`Synced @cortexkit/antigravity-auth-core into ${CORE_TARGET}`)
+if (existsSync(CORE_DIST)) {
+  if (existsSync(CORE_TARGET)) {
+    const coreDistTarget = join(CORE_TARGET, 'dist')
+    rmSync(coreDistTarget, { recursive: true, force: true })
+    cpSync(CORE_DIST, coreDistTarget, { recursive: true })
+    console.log(`Synced @cortexkit/antigravity-auth-core into ${CORE_TARGET}`)
+  } else {
+    console.warn(
+      `[install-local] @cortexkit/antigravity-auth-core not found at ${CORE_TARGET} — the host may be running a stale core. Run \`bun run install:local\` from the core package first.`,
+    )
+  }
 }
 
 console.log('Restart OpenCode (or wait for the plugin watcher) to load it.')

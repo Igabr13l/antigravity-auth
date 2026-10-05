@@ -522,11 +522,11 @@ export function buildResponseStream(
   let bodyEnded = false
   const failBody = (error?: Error): void => {
     if (bodyEnded || responseBody.destroyed) return
-    if (!source.destroyed) source.destroy()
-    responseBody.destroy(
+    const err =
       error ??
-        new Error('Antigravity response body was cut off before it finished'),
-    )
+      new Error('Antigravity response body was cut off before it finished')
+    responseBody.destroy(err)
+    if (source !== responseBody && !source.destroyed) source.destroy()
   }
   const onSocketClose = (): void => failBody()
   socket.on('error', failBody)

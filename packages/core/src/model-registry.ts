@@ -302,6 +302,7 @@ const RESOLVER_ALIASES: Record<string, string> = {
   'claude-opus-4-6-thinking-medium': 'claude-opus-4-6-thinking',
   'claude-opus-4-6-thinking-high': 'claude-opus-4-6-thinking',
   'claude-opus-4-6-thinking-max': 'claude-opus-4-6-thinking',
+  'claude-sonnet-4-6-thinking-max': 'claude-sonnet-4-6',
   'gemini-claude-sonnet-4-6-thinking-low': 'claude-sonnet-4-6',
   'gemini-claude-sonnet-4-6-thinking-medium': 'claude-sonnet-4-6',
   'gemini-claude-sonnet-4-6-thinking-high': 'claude-sonnet-4-6',

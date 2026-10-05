@@ -145,7 +145,9 @@ export function toGeminiSchema(
       (options.moveNumericConstraintsToDescription &&
         NUMERIC_SCHEMA_CONSTRAINTS.has(key)) ||
       (EXCLUSIVE_BOUND_CONSTRAINTS.has(key) &&
-        (typeof value === 'string' || typeof value === 'number'))
+        (typeof value === 'string' ||
+          typeof value === 'number' ||
+          typeof value === 'boolean'))
     ) {
       numericConstraintHints.push(`${key}: ${value}`)
     } else if (key === 'default' || key === 'examples') {

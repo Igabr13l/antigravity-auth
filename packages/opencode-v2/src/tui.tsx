@@ -249,7 +249,7 @@ export function createDefaultQuotaFetcher(
           if (!access) throw error
           groups = await loadGroups(account, access)
         }
-        if (groups && Object.keys(groups).length > 0) {
+        if (groups) {
           state.cache.set(key, { groups, fetchedAt: Date.now() })
           failures.delete(key)
           nextAttemptAt.delete(key)
