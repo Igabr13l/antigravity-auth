@@ -6,6 +6,7 @@ import type { SessionHttpRequest } from '@opencode-ai/plugin/promise/session'
 
 import plugin, {
   createOpenCodeV2AntigravityPlugin,
+  parseResetDelayMs,
   upsertOAuthAccount,
 } from '../src/plugin.ts'
 
@@ -229,5 +230,123 @@ describe('opencode-v2-antigravity-auth plugin entry', () => {
     } finally {
       if (cleanup) await cleanup()
     }
+  })
+
+  test('fails fast on a 400 instead of rotating through every account', async () => {
+    const configDir = process.env.OPENCODE_CONFIG_DIR
+    if (!configDir) throw new Error('OPENCODE_CONFIG_DIR is not set')
+    mkdirSync(configDir, { recursive: true })
+    const account = (name: string) => ({
+      refreshToken: `${name}-refresh`,
+      projectId: `${name}-project`,
+      addedAt: 1,
+      lastUsed: 0,
+      enabled: true,
+      rateLimitResetTimes: {},
+    })
+    writeFileSync(
+      join(configDir, 'antigravity-accounts.json'),
+      `${JSON.stringify({
+        version: 4,
+        accounts: [account('a'), account('b')],
+        activeIndex: 0,
+        activeIndexByFamily: { claude: 0, gemini: 0 },
+      })}\n`,
+    )
+
+    let httpRequestHook:
+      | ((event: SessionHttpRequest) => Promise<void>)
+      | undefined
+    let sends = 0
+    const adapter = createOpenCodeV2AntigravityPlugin({
+      refreshAntigravityToken: async (refresh) => ({
+        refresh,
+        access: `access-${refresh}`,
+        expires: Date.now() + 60_000,
+      }),
+      ensureProjectContext: async (auth) => ({
+        auth,
+        projectId: 'project',
+        effectiveProjectId: 'project',
+      }),
+      send: async () => {
+        sends += 1
+        return new Response(
+          JSON.stringify({
+            error: {
+              status: 'INVALID_ARGUMENT',
+              message: 'Invalid `signature` in `thinking` block',
+            },
+          }),
+          { status: 400, headers: { 'content-type': 'application/json' } },
+        )
+      },
+    })
+    const registration = { dispose: async () => {} }
+    const cleanup = await adapter.setup({
+      session: {
+        hook: async (name: string, callback: unknown) => {
+          if (name === 'http.request') {
+            httpRequestHook = callback as (
+              event: SessionHttpRequest,
+            ) => Promise<void>
+          }
+          return registration
+        },
+      },
+      integration: { transform: async () => registration },
+    } as never)
+
+    try {
+      const event = {
+        sessionID: 'bad-request-session',
+        agent: 'build',
+        model: { providerID: 'google', id: 'gemini-3.8-flash' },
+        kind: 'chat',
+        request: new Request(
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse',
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+            }),
+          },
+        ),
+      }
+      await httpRequestHook!(event as never)
+      const response = await fetch(event.request)
+      const body = await response.text()
+      // The payload, not the account, is at fault: one send, and the host sees
+      // the real 400 (with the upstream detail) instead of a generic 502.
+      expect(sends).toBe(1)
+      expect(response.status).toBe(400)
+      expect(body).toContain('INVALID_ARGUMENT')
+      expect(body).toContain('Invalid `signature` in `thinking` block')
+    } finally {
+      if (cleanup) await cleanup()
+    }
+  })
+})
+
+describe('parseResetDelayMs', () => {
+  test('reads the reset window out of an exhausted-quota message', () => {
+    expect(
+      parseResetDelayMs(
+        'Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 58h13m57s.',
+      ),
+    ).toBe(58 * 3_600_000 + 13 * 60_000 + 57_000)
+    expect(parseResetDelayMs('Resets in 2d 3h.')).toBe(
+      2 * 86_400_000 + 3 * 3_600_000,
+    )
+    expect(parseResetDelayMs('resets in 45m')).toBe(45 * 60_000)
+  })
+
+  test('returns undefined when the message carries no reset window', () => {
+    expect(
+      parseResetDelayMs('Resource has been exhausted (e.g. check quota).'),
+    ).toBeUndefined()
+    expect(parseResetDelayMs('')).toBeUndefined()
+    expect(parseResetDelayMs(undefined)).toBeUndefined()
   })
 })

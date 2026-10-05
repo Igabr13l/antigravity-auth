@@ -375,6 +375,39 @@ function retryAfterMs(response: Response): number | undefined {
     : undefined
 }
 
+/** A deterministic upstream rejection that no other account can fix. */
+export class UpstreamRequestError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'UpstreamRequestError'
+  }
+}
+
+/**
+ * Antigravity reports an exhausted quota window in the error text, e.g.
+ * `Individual quota reached. ... Resets in 58h13m57s.` There is no
+ * `Retry-After` header on that response, so without parsing the message the
+ * account would be retried every fallback interval and burn a request on a
+ * guaranteed 429 each time.
+ */
+export function parseResetDelayMs(
+  message: string | undefined,
+): number | undefined {
+  if (!message) return undefined
+  const match = /resets?\s+in\s+((?:\d+(?:\.\d+)?\s*[dhms]\s*)+)/i.exec(message)
+  if (!match?.[1]) return undefined
+  const unit = { d: 86_400_000, h: 3_600_000, m: 60_000, s: 1_000 } as const
+  let total = 0
+  for (const part of match[1].matchAll(/(\d+(?:\.\d+)?)\s*([dhms])/gi)) {
+    const key = part[2]?.toLowerCase() as keyof typeof unit
+    total += Number(part[1]) * unit[key]
+  }
+  return total > 0 ? Math.round(total) : undefined
+}
+
 async function readErrorDetails(
   response: Response,
 ): Promise<{ reason?: string; message: string }> {
@@ -965,7 +998,7 @@ export function createOpenCodeV2AntigravityPlugin(
                 'antigravity',
                 requested,
                 limit,
-                retryAfterMs(response) ?? 60_000,
+                retryAfterMs(response) ?? parseResetDelayMs(message) ?? 60_000,
                 3_600_000,
               )
               excluded.add(account.index)
@@ -975,9 +1008,14 @@ export function createOpenCodeV2AntigravityPlugin(
               break
             }
 
-            failure = new Error(
-              `Antigravity HTTP ${response.status}${reason ? ` (${reason})` : ''}`,
-            )
+            const detail = `Antigravity HTTP ${response.status}${reason ? ` (${reason})` : ''}${message ? `: ${message}` : ''}`
+            // A 400 means the payload itself was rejected. Every other account
+            // would reject the same body, so rotating only burns requests (and
+            // per-account health) before surfacing the identical error.
+            if (response.status === 400) {
+              throw new UpstreamRequestError(response.status, detail)
+            }
+            failure = new Error(detail)
             excluded.add(account.index)
             break
           }
@@ -1249,12 +1287,14 @@ export function createOpenCodeV2AntigravityPlugin(
             log('server-error', errorMessage(error))
             try {
               if (!res.headersSent) {
-                res.writeHead(502, { 'content-type': 'application/json' })
+                const status =
+                  error instanceof UpstreamRequestError ? error.status : 502
+                res.writeHead(status, { 'content-type': 'application/json' })
                 res.end(
                   JSON.stringify({
                     error: {
                       message: errorMessage(error),
-                      status: 502,
+                      status,
                     },
                   }),
                 )
