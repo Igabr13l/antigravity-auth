@@ -1,5 +1,6 @@
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -26,10 +27,18 @@ import { fileURLToPath } from 'node:url'
 
 const PACKAGE_ROOT = resolve(fileURLToPath(import.meta.url), '../..')
 const DIST = join(PACKAGE_ROOT, 'dist')
+const CORE_ROOT = resolve(PACKAGE_ROOT, '../core')
+const CORE_DIST = join(CORE_ROOT, 'dist')
 const PLUGIN_ID = 'antigravity-auth'
 const CONFIG_DIR =
   process.env.OPENCODE_CONFIG_DIR ?? join(homedir(), '.config', 'opencode')
 const TARGET = join(CONFIG_DIR, 'plugins', PLUGIN_ID)
+const CORE_TARGET = join(
+  CONFIG_DIR,
+  'node_modules',
+  '@cortexkit',
+  'antigravity-auth-core',
+)
 
 /** Built entrypoint -> name the discovery loader reads. */
 const ENTRYPOINTS: Record<string, string> = {
@@ -55,4 +64,12 @@ console.log(`Installed ${PLUGIN_ID} into ${TARGET}`)
 console.log(
   `Copied ${copied} module(s); server entry = index.ts, TUI entry = tui.ts.`,
 )
+
+if (existsSync(CORE_DIST) && existsSync(CORE_TARGET)) {
+  const coreDistTarget = join(CORE_TARGET, 'dist')
+  rmSync(coreDistTarget, { recursive: true, force: true })
+  cpSync(CORE_DIST, coreDistTarget, { recursive: true })
+  console.log(`Synced @cortexkit/antigravity-auth-core into ${CORE_TARGET}`)
+}
+
 console.log('Restart OpenCode (or wait for the plugin watcher) to load it.')
