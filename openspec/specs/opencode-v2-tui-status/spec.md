@@ -316,9 +316,13 @@ accounts that normalise to the same key.
 
 The keymap layer SHALL be registered from whichever slot the host mounts, so
 that a failure to claim one surface does not leave the accounts command
-unreachable. Because the host owns a layer by the component that registered it,
-the plugin SHALL re-register the command when a later render finds it no longer
-reachable.
+unreachable. The layer SHALL be registered exactly once per TUI session: on
+host 2.0.22 `ctx.keymap.commands()` never lists keymap-layer commands, so a
+"still registered?" probe always answers no, and slot renders fire at high
+frequency with reactive footer content — per-render re-registration would
+accumulate unbounded layers and stall the keymap dispatcher (bound keys such
+as `ctrl+c` stop responding). A failed first registration SHALL be retried on
+later renders until it succeeds once.
 
 #### Scenario: Prompt-footer slot unavailable
 
@@ -327,12 +331,11 @@ reachable.
 - **THEN** rendering the sidebar registers the keymap layer and the accounts
   command remains reachable
 
-#### Scenario: The owning component unmounts
+#### Scenario: Slot renders repeatedly
 
-- **WHEN** a render finds the accounts command no longer reachable, because the
-  layer's component was torn down
-- **THEN** the plugin registers the layer again instead of trusting its
-  already-bound flag
+- **WHEN** the host re-renders the status slots many times in one session
+- **THEN** the plugin registers the keymap layer only the first time, so the
+  keymap dispatcher keeps working and `ctrl+c` keeps exiting
 
 ### Requirement: TUI failures are non-fatal
 

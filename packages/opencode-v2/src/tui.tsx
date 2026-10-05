@@ -315,23 +315,15 @@ export function createOpenCodeV2AntigravityTui(
       const ACCOUNTS_COMMAND_ID = 'antigravity.accounts'
 
       const bindKeymap = (): void => {
-        if (keymapBound) {
-          // A layer is owned by the component that registered it, and the
-          // host drops it silently if that component unmounts (a slot can be
-          // torn down and remounted). Probe reachability and re-register when
-          // our command is gone, instead of trusting a stale "already bound".
-          try {
-            const alive = ctx.keymap
-              .commands()
-              .some((command) => command.id === ACCOUNTS_COMMAND_ID)
-            if (alive) return
-          } catch {
-            // No command probe on this host build; keep the one-shot guard so
-            // we never register duplicate layers.
-            return
-          }
-          keymapBound = false
-        }
+        // One layer for the whole TUI session, registered on the first slot
+        // render (registration needs a component scope). Re-registering is not
+        // an option: `ctx.keymap.commands()` never lists keymap-layer commands
+        // on host 2.0.22, so any "is it still registered?" probe would always
+        // answer no — and slot renders fire at high frequency (observed ~80/s
+        // with reactive footer content), so per-render re-registration
+        // accumulates thousands of layers and stalls the keymap dispatcher:
+        // Ctrl+C (and every other bound key) stops responding.
+        if (keymapBound) return
         try {
           ctx.keymap.layer(() => ({
             commands: [
@@ -354,7 +346,7 @@ export function createOpenCodeV2AntigravityTui(
           keymapBound = true
         } catch {
           // Layer registration needs a component scope; retry on the next
-          // slot render.
+          // slot render until it succeeds once.
         }
       }
 

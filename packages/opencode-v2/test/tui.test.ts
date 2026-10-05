@@ -538,14 +538,19 @@ describe('OpenCode 2 Antigravity TUI plugin', () => {
     expect(calls).toBe(2)
   })
 
-  test('re-registers the accounts command if its layer is dropped', async () => {
+  test('registers the accounts layer exactly once across slot re-renders', async () => {
+    // Host 2.0.22's ctx.keymap.commands() never lists keymap-layer commands,
+    // so any "is it still registered?" probe always answers no. Slot renders
+    // fire at high frequency with reactive footer content, and re-registering
+    // on each render accumulates thousands of layers that stall the keymap
+    // dispatcher — Ctrl+C (and every other binding) stops responding. The
+    // bind is therefore once-only per TUI session.
     const harness = stubContext()
-    let reachable: string[] = []
     ;(
       harness.context.keymap as unknown as {
         commands: () => Array<{ id: string }>
       }
-    ).commands = () => reachable.map((id) => ({ id }))
+    ).commands = () => []
     const plugin = createOpenCodeV2AntigravityTui({
       loadPool: async () => pool([{ email: 'a@example.test' }]),
       pollMs: 5,
@@ -553,17 +558,16 @@ describe('OpenCode 2 Antigravity TUI plugin', () => {
     })
     const cleanup = await plugin.setup(harness.context as never)
 
-    harness.claims[0]!.render({})
+    for (let index = 0; index < 50; index += 1) {
+      harness.claims[0]!.render({})
+      harness.claims[1]!.render({})
+    }
     expect(harness.layers).toHaveLength(1)
-
-    reachable = ['antigravity.accounts']
-    harness.claims[0]!.render({})
-    expect(harness.layers).toHaveLength(1)
-
-    // The owning component unmounts, taking the layer with it.
-    reachable = []
-    harness.claims[0]!.render({})
-    expect(harness.layers).toHaveLength(2)
+    expect(
+      harness.layers[0]?.commands.find(
+        (candidate) => candidate.id === 'antigravity.accounts',
+      ),
+    ).toBeDefined()
 
     if (cleanup) await cleanup()
   })
