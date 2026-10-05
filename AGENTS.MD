@@ -33,7 +33,7 @@ bun run format:check                 # biome format .  (CI gate)
 bun run lint                         # biome lint .     (CI gate)
 ```
 
-Pre-commit hooks (`.lefthook.yml`) run Biome on changed `*.{ts,tsx,js,mjs,json,jsonc,yml,yaml}` files via `bunx biome check --staged --no-errors-on-unmatched`. The repo pins the toolchain in `mise.toml` (`bun = "1.3"`, `node = "24"`) and CI uses `oven-sh/setup-bun@v2` with `bun-version: 1.3`.
+Pre-commit hooks (`lefthook.yml`) run Biome on changed `*.{ts,tsx,js,mjs,json,jsonc,yml,yaml}` files via `bunx biome check --staged --no-errors-on-unmatched`. The repo pins the toolchain in `mise.toml` (`bun = "1.3"`, `node = "24"`) and CI uses `oven-sh/setup-bun@v2` with `bun-version: 1.3`.
 
 ## TypeScript Configuration
 
@@ -180,12 +180,12 @@ Per-account device fingerprints stored in `antigravity-accounts.json`. Each fing
 ## Documentation
 
 - [README.md](README.md) — Installation & usage
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — Detailed architecture guide
-- [docs/ANTIGRAVITY_API_SPEC.md](docs/ANTIGRAVITY_API_SPEC.md) — API reference
-- [CHANGELOG.md](CHANGELOG.md) — Version history
+- [ARCHITECTURE.md](ARCHITECTURE.md) — Detailed architecture guide
+- [packages/opencode/docs/ANTIGRAVITY_API_SPEC.md](packages/opencode/docs/ANTIGRAVITY_API_SPEC.md) — API reference
+- [packages/opencode/CHANGELOG.md](packages/opencode/CHANGELOG.md) — Version history
 - [ARCHITECTURE.md](ARCHITECTURE.md) and [STRUCTURE.md](STRUCTURE.md) — repo-level architecture and file-system map
 - `openspec/` — OpenSpec capability specs (validate with `openspec validate --specs --strict`); behavior changes to the adapters must update the matching spec
-- [biome.json](biome.json) — formatter + linter config
+- [biome.jsonc](biome.jsonc) — formatter + linter config
 - [lefthook.yml](lefthook.yml) — pre-commit Biome hook
 - [mise.toml](mise.toml) — pinned `bun` + `node` versions
 

@@ -4,6 +4,33 @@ Google Antigravity OAuth for coding agents. Authenticate with your Google accoun
 
 This monorepo ships four packages:
 
+## Table of contents
+
+- [Risk and ToS warning](#risk-and-terms-of-service-warning)
+- [Packages and supported hosts](#packages-and-supported-hosts)
+- [Installation matrix](#installation-matrix)
+- [First login](#first-login)
+- [Models and routing](#models-and-routing)
+- [Multi-account behavior](#multi-account-behavior)
+- [Quota semantics and killswitch](#quota-semantics-and-killswitch)
+- [OpenCode sidebar and commands](#opencode-sidebar-and-slash-commands)
+- [Standalone CLI](#standalone-cli)
+- [Pi usage](#pi-usage)
+- [Configuration reference](#configuration-reference)
+- [State, cache, and log files](#statecachelogrpcdump-files)
+- [Security and redaction](#security-and-redaction)
+- [Troubleshooting](#troubleshooting)
+- [Development workflow](#development-workflow)
+- [Test strategy](#test-strategy)
+- [Release process](#release-process)
+- [Architecture and structure links](#architecture-and-structure-links)
+
+<details>
+<summary>Package details</summary>
+
+
+</details>
+
 | Package | Host | Role |
 | --- | --- | --- |
 | [`@cortexkit/opencode-antigravity-auth`](packages/opencode) | OpenCode 1.x server | Intercepts `fetch()`, runs the account pool + quota manager, drives slash commands, and exposes a TUI sidebar through a loopback RPC. |
@@ -433,9 +460,14 @@ The repo splits tests by what they exercise and what they need:
 | Black-box e2e (deterministic) | Mock Antigravity server, harness runner (`packages/e2e-tests/`) | No | `bun run test:e2e` |
 | Live model inventory | `bun run test:e2e:models` (uses `test-models.ts`) | Yes — gated by CI label | `bun run test:e2e:models` |
 | Cross-model regression | `bun run test:e2e:regression` (`script/test-regression.ts`) | Yes | `bun run test:e2e:regression` |
+| OpenCode 2 e2e (Docker, network-disabled) | `bun run test:e2e:opencode-v2` | No — isolated `OPENCODE_DB` | `bun run test:e2e:opencode-v2` |
+| OpenCode 2 e2e (local debug) | `bun run test:e2e:opencode-v2:local` | No — isolated `OPENCODE_DB` required | `bun run test:e2e:opencode-v2:local` |
+| OpenCode 2 smoke | `bun run smoke:opencode-v2` (pack/install + `Host.resolve()`) | No | `bun run smoke:opencode-v2` |
 | TUI smoke | `bun run --cwd packages/opencode smoke:tui` (build-tarball install + spawn) | No | `bun run --cwd packages/opencode smoke:tui` |
 
 Deterministic tests run everywhere (including in CI). The live `test:e2e:models` and `test:e2e:regression` flows are gated by label because they hit real Google infrastructure. They live in `packages/opencode/script/` (TypeScript + shell launchers) and use `anthropic-agy` style fixtures kept under `test-fixtures/`.
+
+> **OpenCode 2 e2e isolation:** The `test:e2e:opencode-v2` and `test:e2e:opencode-v2:local` flows run the real OpenCode host. **Always ensure `OPENCODE_DB` points to an isolated temporary database** before running them — running against your real OpenCode database will corrupt or overwrite your session data. This isolation rule is enforced in `openspec/config.yaml` and `AGENTS.MD`. The Docker variant sets this automatically; the local variant requires you to set it explicitly.
 
 ## Release process
 
@@ -467,6 +499,8 @@ CI (`.github/workflows/ci.yml`) reuses the same typecheck → build → smoke �
 - [packages/opencode/docs/TROUBLESHOOTING.md](packages/opencode/docs/TROUBLESHOOTING.md) — long-form troubleshooting with platform-specific commands.
 - [packages/opencode/docs/ANTIGRAVITY_API_SPEC.md](packages/opencode/docs/ANTIGRAVITY_API_SPEC.md) — Antigravity API reference.
 - [packages/opencode/assets/antigravity.schema.json](packages/opencode/assets/antigravity.schema.json) — generated JSON Schema for IDE validation.
+- [openspec/config.yaml](openspec/config.yaml) — behavioral specification config (cross-adapter wire invariants, DB isolation rule, pool v4 fail-closed rule).
+- [openspec/specs/](openspec/specs/) — capability specs for OpenCode 2 adapter behaviors and (as of this version) the core engine (storage, transport, OAuth, quota, rotation).
 
 ## License
 
