@@ -1009,9 +1009,10 @@ export function createOpenCodeV2AntigravityPlugin(
             }
 
             const detail = `Antigravity HTTP ${response.status}${reason ? ` (${reason})` : ''}${message ? `: ${message}` : ''}`
-            // A 400 means the payload itself was rejected. Every other account
-            // would reject the same body, so rotating only burns requests (and
-            // per-account health) before surfacing the identical error.
+            // A 400 means the payload itself was rejected. Another account
+            // almost always rejects the same body (the log shows rare
+            // exceptions that only produced a truncated stream), so rotating
+            // mostly burns requests and per-account health.
             if (response.status === 400) {
               throw new UpstreamRequestError(response.status, detail)
             }
