@@ -56,6 +56,151 @@ export function parseRateLimitReason(
   return 'UNKNOWN'
 }
 
+/**
+ * Parses a duration string (e.g. "3600s", "120.5s", "500ms", "10m", "2h", "1d",
+ * or compound "1h30m", "58h13m57s") into milliseconds.
+ * Returns null if the string cannot be parsed or represents a non-positive duration.
+ */
+export function parseDurationStringToMs(duration: string): number | null {
+  const trimmed = duration.trim()
+  if (!trimmed || trimmed.startsWith('-')) return null
+
+  // 1. Simple match (e.g. "3600s", "15.5s", "500ms", "10m", "2h", "1d")
+  const simpleMatch = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)?$/i.exec(trimmed)
+  if (simpleMatch?.[1]) {
+    const value = parseFloat(simpleMatch[1])
+    if (!Number.isFinite(value) || value <= 0) return null
+    const unit = (simpleMatch[2] || 's').toLowerCase()
+    switch (unit) {
+      case 'd':
+        return Math.round(value * 86_400_000)
+      case 'h':
+        return Math.round(value * 3_600_000)
+      case 'm':
+        return Math.round(value * 60_000)
+      case 's':
+        return Math.round(value * 1_000)
+      case 'ms':
+        return Math.round(value)
+      default:
+        return Math.round(value * 1_000)
+    }
+  }
+
+  // 2. Compound match (e.g. "1h30m", "58h13m57s")
+  if (!/^(?:\d+(?:\.\d+)?\s*(?:ms|s|m|h|d)\s*)+$/i.test(trimmed)) {
+    return null
+  }
+
+  const compoundRegex = /(\d+(?:\.\d+)?)\s*(ms|s|m(?!s)|h|d)/gi
+  let totalMs = 0
+  let matched = false
+  for (const part of trimmed.matchAll(compoundRegex)) {
+    if (!part[1] || !part[2]) continue
+    matched = true
+    const value = parseFloat(part[1])
+    const unit = part[2].toLowerCase()
+    switch (unit) {
+      case 'd':
+        totalMs += value * 86_400_000
+        break
+      case 'h':
+        totalMs += value * 3_600_000
+        break
+      case 'm':
+        totalMs += value * 60_000
+        break
+      case 's':
+        totalMs += value * 1_000
+        break
+      case 'ms':
+        totalMs += value
+        break
+    }
+  }
+
+  return matched && totalMs > 0 ? Math.round(totalMs) : null
+}
+
+/**
+ * Parses Google RPC error structures for retry/cooldown delays.
+ *
+ * Checks in order:
+ * 1. `type.googleapis.com/google.rpc.RetryInfo`: `retryDelay` Protobuf Duration string.
+ * 2. `type.googleapis.com/google.rpc.ErrorInfo`: `metadata.quotaResetDelay` duration string.
+ * 3. `type.googleapis.com/google.rpc.ErrorInfo`: `metadata.quotaResetTimeStamp` ISO timestamp string.
+ *
+ * Returns delay in milliseconds, or undefined if no valid delay is found.
+ */
+export function parseGoogleRpcRetryDelay(
+  payload: unknown,
+  now: () => number = Date.now,
+): number | undefined {
+  if (!payload || typeof payload !== 'object') return undefined
+
+  const record = payload as Record<string, unknown>
+  const error =
+    typeof record.error === 'object' && record.error !== null
+      ? (record.error as Record<string, unknown>)
+      : undefined
+
+  const details = Array.isArray(error?.details)
+    ? error.details
+    : Array.isArray(record.details)
+      ? record.details
+      : Array.isArray(payload)
+        ? payload
+        : undefined
+
+  if (!details || details.length === 0) return undefined
+
+  // Priority 1: google.rpc.RetryInfo
+  for (const detail of details) {
+    if (!detail || typeof detail !== 'object') continue
+    const type = (detail as Record<string, unknown>)['@type']
+    if (typeof type === 'string' && type.includes('google.rpc.RetryInfo')) {
+      const retryDelay = (detail as Record<string, unknown>).retryDelay
+      if (typeof retryDelay === 'string') {
+        const ms = parseDurationStringToMs(retryDelay)
+        if (ms !== null && ms > 0) {
+          return ms
+        }
+      }
+    }
+  }
+
+  // Priority 2: google.rpc.ErrorInfo metadata
+  for (const detail of details) {
+    if (!detail || typeof detail !== 'object') continue
+    const type = (detail as Record<string, unknown>)['@type']
+    if (typeof type === 'string' && type.includes('google.rpc.ErrorInfo')) {
+      const metadata = (detail as Record<string, unknown>).metadata
+      if (metadata && typeof metadata === 'object') {
+        const resetDelay = (metadata as Record<string, unknown>).quotaResetDelay
+        if (typeof resetDelay === 'string') {
+          const ms = parseDurationStringToMs(resetDelay)
+          if (ms !== null && ms > 0) {
+            return ms
+          }
+        }
+        const resetTimestamp = (metadata as Record<string, unknown>)
+          .quotaResetTimeStamp
+        if (typeof resetTimestamp === 'string') {
+          const parsed = Date.parse(resetTimestamp)
+          if (Number.isFinite(parsed)) {
+            const delta = parsed - now()
+            if (delta > 0) {
+              return Math.ceil(delta)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return undefined
+}
+
 export function calculateBackoffMs(
   reason: RateLimitReason,
   consecutiveFailures: number,

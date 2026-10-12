@@ -44,6 +44,7 @@ import {
   normalizeGeminiTools,
   type OAuthAuthDetails,
   orderAgyRequestPayloadInPlace,
+  parseGoogleRpcRetryDelay,
   parseRateLimitReason,
   parseRefreshParts,
   refreshAntigravityToken,
@@ -429,9 +430,15 @@ export function parseResetDelayMs(
   return total > 0 ? Math.round(total) : undefined
 }
 
-async function readErrorDetails(
+export interface ErrorDetails {
+  reason?: string
+  message: string
+  retryDelayMs?: number
+}
+
+export async function readErrorDetails(
   response: Response,
-): Promise<{ reason?: string; message: string }> {
+): Promise<ErrorDetails> {
   const body = await response.text().catch(() => '')
   try {
     const parsed: unknown = JSON.parse(body)
@@ -447,8 +454,10 @@ async function readErrorDetails(
       .find((value): value is string => typeof value === 'string')
     const resolvedReason =
       reason ?? (typeof error?.status === 'string' ? error.status : undefined)
+    const retryDelayMs = parseGoogleRpcRetryDelay(parsed)
     return {
       ...(resolvedReason ? { reason: resolvedReason } : {}),
+      ...(retryDelayMs !== undefined ? { retryDelayMs } : {}),
       message:
         typeof error?.message === 'string'
           ? error.message.slice(0, 300)
@@ -951,7 +960,8 @@ export function createOpenCodeV2AntigravityPlugin(
               return { response, account }
             }
 
-            const { reason, message } = await readErrorDetails(response)
+            const { reason, message, retryDelayMs } =
+              await readErrorDetails(response)
             log('upstream-error', response.status, reason ?? '', message)
             if (
               response.status === 404 &&
@@ -1003,7 +1013,7 @@ export function createOpenCodeV2AntigravityPlugin(
                   'antigravity',
                   requested,
                   'MODEL_CAPACITY_EXHAUSTED',
-                  45_000,
+                  retryDelayMs ?? 45_000,
                   3_600_000,
                 )
               }
@@ -1022,7 +1032,8 @@ export function createOpenCodeV2AntigravityPlugin(
                   'antigravity',
                   requested,
                   limit,
-                  retryAfterMs(response) ??
+                  retryDelayMs ??
+                    retryAfterMs(response) ??
                     parseResetDelayMs(message) ??
                     60_000,
                   3_600_000,

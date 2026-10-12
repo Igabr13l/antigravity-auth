@@ -6,7 +6,11 @@ import {
   SKIP_THOUGHT_SIGNATURE,
 } from '@cortexkit/antigravity-auth-core'
 
-import { buildEnvelope, resolveJobSessionID } from '../src/plugin.ts'
+import {
+  buildEnvelope,
+  readErrorDetails,
+  resolveJobSessionID,
+} from '../src/plugin.ts'
 
 function scopeForRequest() {
   const sessions = new AgyRequestSessionStore('opencode-v2-request-test')
@@ -366,5 +370,58 @@ describe('resolveJobSessionID', () => {
     expect(first).toBe('anonymous:a')
     expect(second).toBe('anonymous:b')
     expect(first).not.toBe(second)
+  })
+})
+
+describe('readErrorDetails', () => {
+  it('extracts RPC reason and RetryInfo delay from 429 response body', async () => {
+    const body = JSON.stringify({
+      error: {
+        code: 429,
+        message: 'Resource has been exhausted (e.g. check quota).',
+        status: 'RESOURCE_EXHAUSTED',
+        details: [
+          {
+            '@type': 'type.googleapis.com/google.rpc.RetryInfo',
+            retryDelay: '3600.026s',
+          },
+        ],
+      },
+    })
+    const response = new Response(body, { status: 429 })
+    const details = await readErrorDetails(response)
+    expect(details.reason).toBe('RESOURCE_EXHAUSTED')
+    expect(details.retryDelayMs).toBe(3_600_026)
+    expect(details.message).toContain('Resource has been exhausted')
+  })
+
+  it('extracts RPC reason and ErrorInfo metadata delay from 429 response body', async () => {
+    const body = JSON.stringify({
+      error: {
+        code: 429,
+        message: 'Quota exceeded',
+        details: [
+          {
+            '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+            reason: 'RATE_LIMIT_EXCEEDED',
+            metadata: {
+              quotaResetDelay: '45m',
+            },
+          },
+        ],
+      },
+    })
+    const response = new Response(body, { status: 429 })
+    const details = await readErrorDetails(response)
+    expect(details.reason).toBe('RATE_LIMIT_EXCEEDED')
+    expect(details.retryDelayMs).toBe(2_700_000)
+  })
+
+  it('handles plain text non-JSON error gracefully', async () => {
+    const response = new Response('Service Unavailable', { status: 503 })
+    const details = await readErrorDetails(response)
+    expect(details.message).toBe('Service Unavailable')
+    expect(details.reason).toBeUndefined()
+    expect(details.retryDelayMs).toBeUndefined()
   })
 })

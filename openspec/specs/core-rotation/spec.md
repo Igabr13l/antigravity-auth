@@ -97,3 +97,22 @@ through as minutes.
 
 - **WHEN** the refresh interval is 3 minutes and the TTL config is `'auto'`
 - **THEN** the cache TTL is 10 minutes (600,000 ms)
+
+### Requirement: Google RPC retry delay parsing
+
+`parseGoogleRpcRetryDelay` SHALL inspect Google RPC error bodies for
+`type.googleapis.com/google.rpc.RetryInfo` (`retryDelay`) and
+`type.googleapis.com/google.rpc.ErrorInfo` (`metadata.quotaResetDelay` or
+`metadata.quotaResetTimeStamp`), converting durations (e.g. `3600s`, `1.5s`,
+`10m`, `1h`) or future ISO timestamps to millisecond values. If no delay is
+present, it SHALL return `undefined`.
+
+#### Scenario: Payload with RetryInfo duration
+
+- **WHEN** an RPC error details array contains `RetryInfo` with `retryDelay: "3600.026s"`
+- **THEN** the parsed delay is `3600026` ms
+
+#### Scenario: Payload with ErrorInfo metadata
+
+- **WHEN** an RPC error contains `ErrorInfo` with `metadata.quotaResetDelay: "45m"`
+- **THEN** the parsed delay is `2700000` ms

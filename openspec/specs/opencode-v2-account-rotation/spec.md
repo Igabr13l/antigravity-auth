@@ -71,6 +71,13 @@ persisting cooldown state to disk.
 - **THEN** the account's cooldown for that family/model uses the provided
   delay and the state is saved
 
+#### Scenario: 429 with Google RPC RetryInfo or ErrorInfo metadata
+
+- **WHEN** the upstream answers 429 without a `retry-after` header but carries
+  `RetryInfo.retryDelay` or `ErrorInfo.metadata.quotaResetDelay`/`quotaResetTimeStamp` in the response body
+- **THEN** the account's cooldown uses the extracted RPC delay instead of the
+  fallback value and the state is saved
+
 ### Requirement: Ineligibility and validation persistence
 
 The bridge SHALL persist `enabled: false` with the failure reason when
