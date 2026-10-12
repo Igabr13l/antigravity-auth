@@ -235,6 +235,37 @@ describe('core AccountManager', () => {
     expect(selected?.index).toBe(0)
   })
 
+  it('indexes accounts safely when stored accounts contain records with missing refresh tokens', () => {
+    const now = 1_000
+    const storedWithInvalid: AccountStorageV4 = {
+      version: 4,
+      accounts: [
+        { refreshToken: '', addedAt: 1, lastUsed: 0 },
+        { refreshToken: 'valid-token', addedAt: 1, lastUsed: 0 },
+      ],
+      activeIndex: 0,
+      activeIndexByFamily: { gemini: 0 },
+    }
+    const memory = createStore(storedWithInvalid)
+    const manager = new AccountManager(undefined, storedWithInvalid, {
+      store: memory.store,
+      now: () => now,
+      random: () => 0.5,
+    })
+    const accounts = manager.getAccounts()
+    expect(accounts).toHaveLength(1)
+    expect(accounts[0]?.index).toBe(0)
+    expect(accounts[0]?.parts.refreshToken).toBe('valid-token')
+
+    const selected = manager.getCurrentOrNextForFamily(
+      'gemini',
+      'antigravity-gemini-3.6-flash',
+      'hybrid',
+      'antigravity',
+    )
+    expect(selected?.index).toBe(0)
+  })
+
   it('tracks model-specific limits independently', () => {
     let now = 1_000
     const memory = createStore(stored)

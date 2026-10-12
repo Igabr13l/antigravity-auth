@@ -100,8 +100,10 @@ polls and across pool mutations. The key SHALL NOT reveal the raw address.
 
 #### Scenario: Account with no address
 
-- **WHEN** a pool entry carries no address
-- **THEN** its key falls back to one derived from its pool index
+- **WHEN** a pool entry carries no email address
+- **THEN** its key falls back to a token hash (`t:<digest>`) or positional index (`#<index>`)
+- **AND** the key is treated as volatile for mutation and attribution, suppressed from
+  state-transition diffs
 
 ### Requirement: Google blocks outrank the enabled flag
 

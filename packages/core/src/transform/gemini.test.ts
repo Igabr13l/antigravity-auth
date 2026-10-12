@@ -728,6 +728,22 @@ describe('transform/gemini', () => {
       })
     })
 
+    it('transforms array union types with null into scalar type with nullable: true', () => {
+      const schema = {
+        type: 'object',
+        properties: {
+          name: { type: ['string', 'null'] },
+          count: { type: ['integer', 'null'] },
+          active: { type: ['boolean'] },
+        },
+      }
+      const result = toGeminiSchema(schema) as Record<string, unknown>
+      const props = result.properties as Record<string, Record<string, unknown>>
+      expect(props.name).toEqual({ type: 'STRING', nullable: true })
+      expect(props.count).toEqual({ type: 'INTEGER', nullable: true })
+      expect(props.active).toEqual({ type: 'BOOLEAN' })
+    })
+
     it('removes additionalProperties field', () => {
       const schema = {
         type: 'object',

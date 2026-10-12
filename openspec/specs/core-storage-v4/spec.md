@@ -43,6 +43,12 @@ and reset to 0 for an empty pool.
 - **WHEN** two records share an email with different `lastUsed`
 - **THEN** the load keeps only the record with the larger `lastUsed`
 
+#### Scenario: In-memory pool index continuous mapping
+
+- **WHEN** an in-memory manager initializes from stored accounts
+- **THEN** only records with non-empty refresh tokens are indexed
+- **AND** runtime account indices are assigned continuously from 0 without gaps
+
 ### Requirement: Lock-held read-modify-write
 
 `mutateAccountStorage` SHALL hold a fenced file lock (`ttlMs: 10_000`,

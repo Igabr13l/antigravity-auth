@@ -620,6 +620,9 @@ export async function fetchWithAgyCliTransport(
 
   try {
     options.signal?.addEventListener('abort', abort, { once: true })
+    if (options.signal?.aborted) {
+      abort()
+    }
     socket.write(requestBytes)
     options.onDebug?.(
       `agy transport request dispatched (${requestBytes.byteLength} bytes)`,

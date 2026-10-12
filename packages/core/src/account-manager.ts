@@ -394,64 +394,63 @@ export class AccountManager {
 
     if (stored && stored.accounts.length > 0) {
       const baseNow = this.now()
-      this.accounts = stored.accounts
-        .map((acc, index): ManagedAccount | null => {
-          if (!acc.refreshToken || typeof acc.refreshToken !== 'string') {
-            return null
-          }
-          const matchesFallback = !!(
-            authFallback &&
-            authParts?.refreshToken &&
-            acc.refreshToken === authParts.refreshToken
-          )
+      const validStoredAccounts = stored.accounts.filter(
+        (acc): acc is AccountMetadataV3 =>
+          typeof acc.refreshToken === 'string' && acc.refreshToken.length > 0,
+      )
+      this.accounts = validStoredAccounts.map((acc, index): ManagedAccount => {
+        const matchesFallback = !!(
+          authFallback &&
+          authParts?.refreshToken &&
+          acc.refreshToken === authParts.refreshToken
+        )
 
-          return {
-            index,
-            email: acc.email,
-            label: acc.label,
-            addedAt: clampNonNegativeInt(acc.addedAt, baseNow),
-            lastUsed: clampNonNegativeInt(acc.lastUsed, 0),
-            parts: {
-              refreshToken: acc.refreshToken,
-              projectId: acc.projectId,
-              managedProjectId: acc.managedProjectId,
-            },
-            // Authoritative record-level fields that survive bare-refresh-token
-            // rotations where `parts.*` may be overwritten with undefined.
+        return {
+          index,
+          email: acc.email,
+          label: acc.label,
+          addedAt: clampNonNegativeInt(acc.addedAt, baseNow),
+          lastUsed: clampNonNegativeInt(acc.lastUsed, 0),
+          parts: {
+            refreshToken: acc.refreshToken,
             projectId: acc.projectId,
             managedProjectId: acc.managedProjectId,
-            access: matchesFallback ? authFallback?.access : undefined,
-            expires: matchesFallback ? authFallback?.expires : undefined,
-            enabled: acc.enabled !== false,
-            rateLimitResetTimes: acc.rateLimitResetTimes ?? {},
-            lastSwitchReason: acc.lastSwitchReason,
-            coolingDownUntil: acc.coolingDownUntil,
-            cooldownReason: acc.cooldownReason,
-            touchedForQuota: {},
-            fingerprint: acc.fingerprint ?? generateFingerprint(),
-            fingerprintHistory: acc.fingerprintHistory ?? [],
-            cachedQuota: normalizeLegacyCachedQuota(acc.cachedQuota),
-            // Restore the opaque identity stamp alongside the quota so the
-            // post-load projection can detect a stale snapshot captured
-            // for a different account after an index shift.
-            cachedQuotaAccountId: acc.cachedQuotaAccountId,
-            cachedQuotaUpdatedAt: acc.cachedQuotaUpdatedAt,
-            capturedTierId: acc.capturedTierId,
-            capturedPaidTierId: acc.capturedPaidTierId,
-            capturedTierAt: acc.capturedTierAt,
-            capturedTierSchemaVersion: acc.capturedTierSchemaVersion,
-            dailyRequestCounts: acc.dailyRequestCounts,
-            verificationRequired: acc.verificationRequired,
-            verificationRequiredAt: acc.verificationRequiredAt,
-            verificationRequiredReason: acc.verificationRequiredReason,
-            verificationUrl: acc.verificationUrl,
-            accountIneligible: acc.accountIneligible,
-            accountIneligibleAt: acc.accountIneligibleAt,
-            accountIneligibleReason: acc.accountIneligibleReason,
-            eligibilityStateUpdatedAt: acc.eligibilityStateUpdatedAt,
-          }
-        })
-        .filter((a): a is ManagedAccount => a !== null)
+          },
+          // Authoritative record-level fields that survive bare-refresh-token
+          // rotations where `parts.*` may be overwritten with undefined.
+          projectId: acc.projectId,
+          managedProjectId: acc.managedProjectId,
+          access: matchesFallback ? authFallback?.access : undefined,
+          expires: matchesFallback ? authFallback?.expires : undefined,
+          enabled: acc.enabled !== false,
+          rateLimitResetTimes: acc.rateLimitResetTimes ?? {},
+          lastSwitchReason: acc.lastSwitchReason,
+          coolingDownUntil: acc.coolingDownUntil,
+          cooldownReason: acc.cooldownReason,
+          touchedForQuota: {},
+          fingerprint: acc.fingerprint ?? generateFingerprint(),
+          fingerprintHistory: acc.fingerprintHistory ?? [],
+          cachedQuota: normalizeLegacyCachedQuota(acc.cachedQuota),
+          // Restore the opaque identity stamp alongside the quota so the
+          // post-load projection can detect a stale snapshot captured
+          // for a different account after an index shift.
+          cachedQuotaAccountId: acc.cachedQuotaAccountId,
+          cachedQuotaUpdatedAt: acc.cachedQuotaUpdatedAt,
+          capturedTierId: acc.capturedTierId,
+          capturedPaidTierId: acc.capturedPaidTierId,
+          capturedTierAt: acc.capturedTierAt,
+          capturedTierSchemaVersion: acc.capturedTierSchemaVersion,
+          dailyRequestCounts: acc.dailyRequestCounts,
+          verificationRequired: acc.verificationRequired,
+          verificationRequiredAt: acc.verificationRequiredAt,
+          verificationRequiredReason: acc.verificationRequiredReason,
+          verificationUrl: acc.verificationUrl,
+          accountIneligible: acc.accountIneligible,
+          accountIneligibleAt: acc.accountIneligibleAt,
+          accountIneligibleReason: acc.accountIneligibleReason,
+          eligibilityStateUpdatedAt: acc.eligibilityStateUpdatedAt,
+        }
+      })
 
       // Update fingerprint versions to match the current runtime version.
       // Saved fingerprints may carry an older version string; this ensures
@@ -878,7 +877,9 @@ export class AccountManager {
         this.now,
       )
       if (selectedIndex !== null) {
-        const selected = this.accounts[selectedIndex]
+        const selected =
+          this.accounts.find((a) => a.index === selectedIndex) ??
+          this.accounts[selectedIndex]
         if (selected) {
           selected.lastUsed = this.now()
           this.markTouchedForQuota(selected, quotaKey)

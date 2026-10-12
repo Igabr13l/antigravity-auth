@@ -116,6 +116,21 @@ export function toGeminiSchema(
     if (key === 'type' && typeof value === 'string') {
       // Convert type to uppercase for Gemini API
       result[key] = value.toUpperCase()
+    } else if (key === 'type' && Array.isArray(value)) {
+      // JSON Schema union type like `type: ["string", "null"]`.
+      // Gemini API Schema proto only accepts a single scalar type enum,
+      // with a separate boolean `nullable: true` for nullable values.
+      const nonNull = value.find(
+        (t) => typeof t === 'string' && t.toLowerCase() !== 'null',
+      )
+      if (nonNull && typeof nonNull === 'string') {
+        result[key] = nonNull.toUpperCase()
+        if (
+          value.some((t) => typeof t === 'string' && t.toLowerCase() === 'null')
+        ) {
+          result.nullable = true
+        }
+      }
     } else if (
       key === 'properties' &&
       typeof value === 'object' &&

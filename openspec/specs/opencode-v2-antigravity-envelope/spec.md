@@ -84,6 +84,12 @@ moved to descriptions for every target, not only GPT-family ones.
   survives as a description hint, so Antigravity's strict protobuf validation
   cannot reject the payload with 400 INVALID_ARGUMENT
 
+#### Scenario: Tool schema carries nullable array types
+
+- **WHEN** a property schema defines a union type with null (e.g. `type: ["string", "null"]`)
+- **THEN** the outgoing schema converts the type to a scalar enum (`STRING`) and sets
+  `nullable: true`, so Antigravity's protobuf validation accepts the schema without 400 errors
+
 ### Requirement: Function-call signature policy
 
 The bridge SHALL keep at most the first function call's `thoughtSignature` per

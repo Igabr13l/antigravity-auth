@@ -12,6 +12,7 @@ import {
   formatPoolSummaryLine,
   formatQuotaParts,
   formatResetIn,
+  isStableAccountKey,
   maskEmail,
   quotaBar,
   quotaBarColor,
@@ -312,13 +313,13 @@ describe('diffAccountPoolStatus', () => {
     expect(diffAccountPoolStatus(undefined, after)).toEqual([])
   })
 
-  test('attributes transitions for token-keyed accounts (no email)', () => {
-    // Address-less accounts key by refreshToken hash — stable across
-    // reorder — so a positional shift between polls is correctly diffed.
+  test('suppresses transitions for address-less accounts', () => {
+    // Address-less accounts key by token hash or index; without an address,
+    // their identity is volatile for mutation and attribution, so diffs suppress them.
     const before = summarizeAccountPool(
       pool([
         { refreshToken: 'tok-a' },
-        { enabled: false, refreshToken: 'tok-b' },
+        { enabled: true, refreshToken: 'tok-b' },
       ]),
       NOW,
     )
@@ -327,6 +328,7 @@ describe('diffAccountPoolStatus', () => {
       NOW,
     )
     expect(after.accounts[0]?.key).toMatch(/^t:/)
+    expect(isStableAccountKey(after.accounts[0]!.key)).toBe(false)
     expect(diffAccountPoolStatus(before, after)).toEqual([])
   })
 

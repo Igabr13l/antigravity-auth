@@ -65,6 +65,12 @@ with an `AbortError`.
 - **THEN** the fetch rejects with `Antigravity request timed out waiting for
   response headers after ...ms` and the socket is destroyed
 
+#### Scenario: Signal aborted upon connect completion
+
+- **WHEN** the caller's signal is aborted before request bytes are written
+- **THEN** the transport destroys the socket immediately with an `AbortError`
+  and rejects without waiting for response headers
+
 ### Requirement: Response head parsing and decoding pipeline
 
 The response head SHALL be parsed for status, headers, `Transfer-Encoding:
