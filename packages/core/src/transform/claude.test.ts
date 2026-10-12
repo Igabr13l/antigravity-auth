@@ -53,13 +53,7 @@ describe('isClaudeThinkingModel', () => {
     expect(isClaudeThinkingModel('claude-sonnet-4-5-thinking-high')).toBe(true)
     expect(isClaudeThinkingModel('claude-opus-4-5-thinking-low')).toBe(true)
     expect(isClaudeThinkingModel('claude-sonnet-4-6')).toBe(true)
-  })
-
-  it('returns true for the Claude 5.5 wire models (tier in the id)', () => {
-    expect(isClaudeThinkingModel('claude-opus-5-5-low')).toBe(true)
-    expect(isClaudeThinkingModel('claude-opus-5-5-medium')).toBe(true)
-    expect(isClaudeThinkingModel('claude-opus-5-5-high')).toBe(true)
-    expect(isClaudeThinkingModel('claude-sonnet-5-5-high')).toBe(true)
+    expect(isClaudeThinkingModel('claude-opus-4-6-thinking')).toBe(true)
   })
 
   it('returns true for case-insensitive matches', () => {

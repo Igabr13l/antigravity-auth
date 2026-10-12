@@ -376,7 +376,8 @@ export async function createOpenCodeV2Harness(
     if (
       scenario === 'tool-roundtrip' &&
       (envelope.model === 'gemini-3.8-flash-medium' ||
-        envelope.model === 'claude-sonnet-5-5-medium')
+        envelope.model === 'claude-sonnet-4-6' ||
+        envelope.model === 'claude-opus-4-6-thinking')
     ) {
       toolRoundtripCalls += 1
       response.end(toolRoundtripCalls === 1 ? toolCallSse() : successSse())
@@ -419,8 +420,12 @@ export async function createOpenCodeV2Harness(
                 name: 'Gemini 3.8 Flash E2E',
                 variants: [{ id: 'low' }, { id: 'medium' }, { id: 'high' }],
               },
-              'claude-sonnet-5-5-thinking': {
-                name: 'Claude Sonnet 5.5 Thinking E2E',
+              'claude-sonnet-4-6-thinking': {
+                name: 'Claude Sonnet 4.6 Thinking E2E',
+                variants: [],
+              },
+              'claude-opus-4-6-thinking': {
+                name: 'Claude Opus 4.6 Thinking E2E',
                 variants: [],
               },
             },

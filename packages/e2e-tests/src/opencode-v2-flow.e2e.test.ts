@@ -135,7 +135,7 @@ describe('OpenCode 2 host flow', () => {
     harness = await createOpenCodeV2Harness('tool-roundtrip')
 
     const result = await harness.run(
-      'google/claude-sonnet-5-5-thinking',
+      'google/claude-sonnet-4-6-thinking',
       'Read README.md, then reply with the exact text E2E_OK.',
     )
 
@@ -146,7 +146,7 @@ describe('OpenCode 2 host flow', () => {
     const routed = harness.requests.filter(
       (request) =>
         request.path === '/agy/primary' &&
-        asRecord(request.body).model === 'claude-sonnet-5-5-medium',
+        asRecord(request.body).model === 'claude-sonnet-4-6',
     )
     expect(routed).toHaveLength(2)
     const continuationRequest = asRecord(asRecord(routed[1]?.body).request)
@@ -163,11 +163,11 @@ describe('OpenCode 2 host flow', () => {
     expect(functionCall?.thoughtSignature).toBe('s'.repeat(64))
   }, 30_000)
 
-  it('applies the native Claude thinking contract on a real host request', async () => {
+  it('applies the native Claude Sonnet 4.6 thinking contract on a real host request', async () => {
     harness = await createOpenCodeV2Harness()
 
     const result = await harness.run(
-      'google/claude-sonnet-5-5-thinking',
+      'google/claude-sonnet-4-6-thinking',
       'Reply with the exact text E2E_OK.',
     )
 
@@ -179,10 +179,43 @@ describe('OpenCode 2 host flow', () => {
       harness.requests.find(
         (request) =>
           request.path === '/agy/primary' &&
-          asRecord(request.body).model === 'claude-sonnet-5-5-medium',
+          asRecord(request.body).model === 'claude-sonnet-4-6',
       )?.body,
     )
-    expect(envelope.model).toBe('claude-sonnet-5-5-medium')
+    expect(envelope.model).toBe('claude-sonnet-4-6')
+    const request = asRecord(envelope.request)
+    const generationConfig = asRecord(request.generationConfig)
+    expect(generationConfig.thinkingConfig).toEqual({
+      includeThoughts: true,
+      thinkingBudget: 1024,
+    })
+    expect(generationConfig.maxOutputTokens).toBe(64_000)
+    expect(request.providerOptions).toBeUndefined()
+    expect(
+      asRecord(asRecord(request.toolConfig).functionCallingConfig).mode,
+    ).toBe('VALIDATED')
+  }, 30_000)
+
+  it('applies the native Claude Opus 4.6 thinking contract on a real host request', async () => {
+    harness = await createOpenCodeV2Harness()
+
+    const result = await harness.run(
+      'google/claude-opus-4-6-thinking',
+      'Reply with the exact text E2E_OK.',
+    )
+
+    expect({ result, requests: harness.requests }).toMatchObject({
+      result: { timedOut: false, code: 0 },
+    })
+    expect(result.stdout).toContain('E2E_OK')
+    const envelope = asRecord(
+      harness.requests.find(
+        (request) =>
+          request.path === '/agy/primary' &&
+          asRecord(request.body).model === 'claude-opus-4-6-thinking',
+      )?.body,
+    )
+    expect(envelope.model).toBe('claude-opus-4-6-thinking')
     const request = asRecord(envelope.request)
     const generationConfig = asRecord(request.generationConfig)
     expect(generationConfig.thinkingConfig).toEqual({

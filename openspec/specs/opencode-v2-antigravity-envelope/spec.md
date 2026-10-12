@@ -39,6 +39,13 @@ thinking config before applying model-family transforms.
 - **THEN** the envelope's `generationConfig.thinkingConfig` carries that level
   with `includeThoughts: true`
 
+#### Scenario: Claude 4.6 thinking model request
+
+- **WHEN** a request resolves to a Claude 4.6 model (`claude-sonnet-4-6` or
+  `claude-opus-4-6-thinking`)
+- **THEN** the envelope's `generationConfig.thinkingConfig` carries
+  `thinkingBudget: 1024` with `includeThoughts: true`
+
 ### Requirement: Claude family transforms
 
 For Claude-family models the bridge SHALL strip ALL inbound thinking blocks

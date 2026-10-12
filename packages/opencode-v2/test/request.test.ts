@@ -227,7 +227,7 @@ describe('OpenCode 2 Antigravity request envelope', () => {
       ],
     }
     const resolved = resolveModelForHeaderStyle(
-      'claude-sonnet-5-5-medium',
+      'claude-sonnet-4-6-thinking',
       'antigravity',
     )
 

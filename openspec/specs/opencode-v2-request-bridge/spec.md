@@ -25,6 +25,14 @@ MUST pass through unmodified.
   than `google`, or for a Google model outside the routable set
 - **THEN** the hook returns without mutating `event.request`
 
+#### Scenario: Routable Claude set claims only 4.6 models
+
+- **WHEN** the host dispatches a request for `claude-sonnet-4-6-thinking` or
+  `claude-opus-4-6-thinking`
+- **THEN** the bridge claims and rewrites the request
+- **AND** requests for unsupported Claude 5.5 identifiers are ignored as
+  outside the routable set
+
 #### Scenario: Title requests are rerouted to a cheap model
 
 - **WHEN** a `title`-kind request arrives for any Google model
