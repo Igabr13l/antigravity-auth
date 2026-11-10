@@ -204,14 +204,24 @@ function getAgyMaxOutputTokens(model: string): number | undefined {
     lower === 'gemini-3.7-flash-high' ||
     lower === 'gemini-3.8-flash-low' ||
     lower === 'gemini-3.8-flash-medium' ||
-    lower === 'gemini-3.8-flash-high'
+    lower === 'gemini-3.8-flash-high' ||
+    lower === 'gemini-4-argon-low' ||
+    lower === 'gemini-4-argon-medium' ||
+    lower === 'gemini-4-argon-high' ||
+    lower === 'gemini-4-carbon-low' ||
+    lower === 'gemini-4-carbon-medium' ||
+    lower === 'gemini-4-carbon-high'
   ) {
     return 65536
   }
   if (lower === 'gemini-3.1-pro-low' || lower === 'gemini-pro-agent') {
     return 65535
   }
-  if (lower === 'claude-sonnet-4-6' || lower === 'claude-opus-4-6-thinking') {
+  if (
+    lower === 'claude-sonnet-4-6' ||
+    lower === 'claude-opus-4-6-thinking' ||
+    /^claude-(opus|sonnet)-5-5-(low|medium|high)$/.test(lower)
+  ) {
     return 64000
   }
   if (lower === 'gpt-oss-120b-medium') {
@@ -1618,7 +1628,9 @@ export function prepareAntigravityRequest(
           requestPayload.providerOptions as Record<string, unknown> | undefined,
           rawGenerationConfig,
         )
-        const isGemini3 = effectiveModel.toLowerCase().includes('gemini-3')
+        const isGemini3 =
+          effectiveModel.toLowerCase().includes('gemini-3') ||
+          effectiveModel.toLowerCase().includes('gemini-4')
 
         log.debug(
           `[ThinkingResolution] rawModel=${rawModel} resolvedModel=${effectiveModel} resolvedTier=${tierThinkingLevel ?? 'none'} variantLevel=${variantConfig?.thinkingLevel ?? 'none'} variantBudget=${variantConfig?.thinkingBudget ?? 'none'} providerOptions.google=${JSON.stringify((requestPayload.providerOptions as any)?.google ?? null)} generationConfig.thinkingConfig=${JSON.stringify((rawGenerationConfig as any)?.thinkingConfig ?? null)}`,
@@ -1628,7 +1640,7 @@ export function prepareAntigravityRequest(
         delete requestPayload.providerOptions
 
         if (variantConfig?.thinkingLevel && isGemini3) {
-          // Gemini 3 native format - use thinkingLevel directly
+          // Gemini 3/4 native format - use thinkingLevel directly
           const variantModelBase = rawModel
             .replace(/-preview-customtools$/i, '')
             .replace(/-preview$/i, '')
@@ -1658,6 +1670,23 @@ export function prepareAntigravityRequest(
                   ? 'medium'
                   : 'high'
             tierThinkingBudget = undefined
+          } else if (/claude-(opus|sonnet)-5-5/i.test(effectiveModel)) {
+            // Claude 5.5 encodes the thinking tier in the wire model id, so
+            // the selected variant re-resolves to a distinct model instead of
+            // only adjusting a numeric budget.
+            const claudeTier: 'low' | 'medium' | 'high' =
+              variantConfig.thinkingBudget <= 8192
+                ? 'low'
+                : variantConfig.thinkingBudget <= 16384
+                  ? 'medium'
+                  : 'high'
+            const variantResolved = resolveModelForHeaderStyle(
+              `${rawModel.replace(/-(minimal|low|medium|high)$/i, '')}-${claudeTier}`,
+              headerStyle,
+            )
+            effectiveModel = variantResolved.actualModel
+            tierThinkingBudget = variantResolved.thinkingBudget
+            tierThinkingLevel = variantResolved.thinkingLevel
           } else {
             // Claude / Gemini 2.5 - use budget directly
             tierThinkingBudget = variantConfig.thinkingBudget

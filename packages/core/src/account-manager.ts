@@ -21,6 +21,11 @@ import {
 } from './fingerprint.ts'
 import { getQuotaGroupForModel } from './model-registry.ts'
 import {
+  isAccountEligibleForModel,
+  type PlanTier,
+  resolveAccountPlanTier,
+} from './plan-tier.ts'
+import {
   normalizeLegacyCachedQuota,
   type QuotaGroup,
   type QuotaGroupSummary,
@@ -549,6 +554,16 @@ export class AccountManager {
     return this.accounts.filter((account) => account.enabled !== false)
   }
 
+  getAccountPlanTier(accountIndex: number): PlanTier {
+    const account =
+      this.accounts.find((a) => a.index === accountIndex) ??
+      this.accounts[accountIndex]
+    if (!account) {
+      return 'unknown'
+    }
+    return resolveAccountPlanTier(account)
+  }
+
   private getEffectiveSoftQuotaThreshold(thresholdPercent: number): number {
     // Soft-quota protection only has a purpose when another enabled account
     // exists to rotate to. Never block the sole usable account.
@@ -785,7 +800,10 @@ export class AccountManager {
       const pinned = this.getCurrentAccountForFamily(family, identity)
       if (pinned) {
         clearExpiredRateLimits(pinned, this.now)
+        const isPlanIneligible =
+          Boolean(model) && !isAccountEligibleForModel(pinned, model!)
         const unavailable =
+          isPlanIneligible ||
           (excludeIndexes?.has(pinned.index) ?? false) ||
           isRateLimitedForHeaderStyle(
             pinned,
@@ -838,7 +856,14 @@ export class AccountManager {
         family,
         identity,
       )
-      const accountsWithMetrics: AccountWithMetrics[] = eligibleAccounts.map(
+      const planEligible = model
+        ? eligibleAccounts.filter((acc) =>
+            isAccountEligibleForModel(acc, model),
+          )
+        : eligibleAccounts
+      const poolForHybrid =
+        planEligible.length > 0 ? planEligible : eligibleAccounts
+      const accountsWithMetrics: AccountWithMetrics[] = poolForHybrid.map(
         (acc) => {
           clearExpiredRateLimits(acc, this.now)
           return {
@@ -921,6 +946,8 @@ export class AccountManager {
     const current = this.getCurrentAccountForFamily(family, identity)
     if (current && !excludeIndexes?.has(current.index)) {
       clearExpiredRateLimits(current, this.now)
+      const isPlanIneligible =
+        Boolean(model) && !isAccountEligibleForModel(current, model!)
       const isLimitedForRequestedStyle = isRateLimitedForHeaderStyle(
         current,
         family,
@@ -937,6 +964,7 @@ export class AccountManager {
         model,
       )
       if (
+        !isPlanIneligible &&
         !isLimitedForRequestedStyle &&
         !isOverThreshold &&
         !this.isAccountCoolingDown(current)
@@ -1008,11 +1036,16 @@ export class AccountManager {
       return null
     }
 
+    const planEligible = model
+      ? available.filter((account) => isAccountEligibleForModel(account, model))
+      : available
+    const eligiblePool = planEligible.length > 0 ? planEligible : available
+
     const usedAccounts = this.getUsedAccounts(identity)
-    const sessionUsed = available.filter((account) =>
+    const sessionUsed = eligiblePool.filter((account) =>
       usedAccounts.has(account.index),
     )
-    const candidates = sessionUsed.length > 0 ? sessionUsed : available
+    const candidates = sessionUsed.length > 0 ? sessionUsed : eligiblePool
 
     const cursor = this.getCursor(family, identity)
     const account = candidates[cursor % candidates.length]

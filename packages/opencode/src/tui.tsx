@@ -38,6 +38,10 @@
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  formatPlanTier,
+  normalizePlanTier,
+} from '@cortexkit/antigravity-auth-core/plan-tier'
 import type {
   TuiPlugin,
   TuiPluginApi,
@@ -591,11 +595,18 @@ function AccountBlock(props: {
     if (typeof cd !== 'number') return 0
     return Math.max(0, cd - props.now())
   }
+  const planLabel = (): string => {
+    const raw = props.account.tier?.paidId ?? props.account.tier?.id
+    if (!raw) return ''
+    const tier = normalizePlanTier(raw)
+    return tier === 'unknown' ? '' : formatPlanTier(tier)
+  }
   const healthText = () => {
     const base = `health ${Math.round(clamp(props.account.health, 0, 100))}`
+    const plan = planLabel() ? ` · ${planLabel()}` : ''
     return cooldownMs() > 0
-      ? `${base} · cooling ${formatWait(cooldownMs())}`
-      : base
+      ? `${base}${plan} · cooling ${formatWait(cooldownMs())}`
+      : `${base}${plan}`
   }
   return (
     <box width='100%' flexDirection='column' marginTop={props.marginTop ?? 0}>

@@ -28,6 +28,10 @@
     "./fetch-timeout": {
       "types": "./dist/fetch-timeout.d.ts",
       "import": "./dist/fetch-timeout.js"
+    },
+    "./plan-tier": {
+      "types": "./dist/plan-tier.d.ts",
+      "import": "./dist/plan-tier.js"
     }
   },
   "files": [

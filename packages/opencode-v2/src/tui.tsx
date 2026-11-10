@@ -721,6 +721,7 @@ function detailElement(
                   <text fg={textBase}>
                     <b>{row.label}</b>
                   </text>
+                  {row.plan && <text fg={textMuted}>· {row.plan}</text>}
                   {row.badge && (
                     <text fg={row.badgeFg ?? textMuted}>· {row.badge}</text>
                   )}

@@ -604,4 +604,44 @@ describe('managedProjectId projection', () => {
     const accounts = manager2.getAccountsForQuotaCheck()
     expect(accounts[0]!.managedProjectId).toBe('my-managed-project')
   })
+
+  it('resolves account plan tier and prefers plan-eligible account for tiered models', () => {
+    const stored: AccountStorageV4 = {
+      version: 4,
+      accounts: [
+        {
+          refreshToken: 'r-free',
+          capturedTierId: 'free-tier',
+          addedAt: 100,
+          lastUsed: 100,
+        },
+        {
+          refreshToken: 'r-pro',
+          capturedTierId: 'free-tier',
+          capturedPaidTierId: 'pro-tier',
+          addedAt: 200,
+          lastUsed: 200,
+        },
+      ],
+      activeIndex: 0,
+      activeIndexByFamily: { claude: 0 },
+    }
+    const memory = createStore(stored)
+    const manager = new AccountManager(undefined, stored, {
+      store: memory.store,
+      now: () => 1_000,
+    })
+
+    expect(manager.getAccountPlanTier(0)).toBe('free')
+    expect(manager.getAccountPlanTier(1)).toBe('pro')
+
+    // Requesting Opus (requires pro): account 0 is free, so account 1 (pro) must be chosen
+    const selected = manager.getCurrentOrNextForFamily(
+      'claude',
+      'antigravity-claude-opus-4-6-thinking',
+      'sticky',
+      'antigravity',
+    )
+    expect(selected?.index).toBe(1)
+  })
 })

@@ -6,6 +6,10 @@
  */
 
 import {
+  getClaudeOpus55Model,
+  getClaudeSonnet55Model,
+  getGemini4ArgonAntigravityModel,
+  getGemini4CarbonAntigravityModel,
   getGemini35FlashAntigravityModel,
   getGemini35FlashGeminiCliFallbackModel,
   getGemini36FlashAntigravityModel,
@@ -29,10 +33,10 @@ export interface ModelResolverOptions {
  * Claude and Gemini 2.5 Pro use numeric budgets.
  */
 export const THINKING_TIER_BUDGETS = {
-  claude: { low: 8192, medium: 16384, high: 32768 },
-  'gemini-2.5-pro': { low: 8192, medium: 16384, high: 32768 },
-  'gemini-2.5-flash': { low: 6144, medium: 12288, high: 24576 },
-  default: { low: 4096, medium: 8192, high: 16384 },
+  claude: { minimal: 1024, low: 8192, medium: 16384, high: 32768 },
+  'gemini-2.5-pro': { minimal: 1024, low: 8192, medium: 16384, high: 32768 },
+  'gemini-2.5-flash': { minimal: 512, low: 6144, medium: 12288, high: 24576 },
+  default: { minimal: 512, low: 4096, medium: 8192, high: 16384 },
 } as const
 
 /**
@@ -79,9 +83,11 @@ const IMAGE_GENERATION_MODELS = /image|imagen/i
 function supportsThinkingTiers(model: string): boolean {
   const lower = model.toLowerCase()
   return (
+    lower.includes('gemini-4') ||
     lower.includes('gemini-3') ||
     lower.includes('gemini-2.5') ||
-    (lower.includes('claude') && lower.includes('thinking'))
+    (lower.includes('claude') &&
+      (lower.includes('thinking') || /claude-(?:opus|sonnet)-5-5/.test(lower)))
   )
 }
 
@@ -121,8 +127,10 @@ function isThinkingCapableModel(model: string): boolean {
   const lower = model.toLowerCase()
   return (
     lower.includes('thinking') ||
+    lower.includes('gemini-4') ||
     lower.includes('gemini-3') ||
-    lower.includes('gemini-2.5')
+    lower.includes('gemini-2.5') ||
+    /claude-(?:opus|sonnet)-5-5/.test(lower)
   )
 }
 
@@ -147,6 +155,8 @@ function getAgyGeminiFlashThinkingBudget(
   highBudget = 10000,
 ): number {
   switch (tier) {
+    case 'minimal':
+      return 500
     case 'low':
       return 1000
     case 'high':
@@ -222,7 +232,31 @@ export function resolveModelWithTier(
   const isGemini36Flash = /^gemini-3\.6-flash/i.test(baseName)
   const isGemini37Flash = /^gemini-3\.7-flash/i.test(baseName)
   const isGemini38Flash = /^gemini-3\.8-flash/i.test(baseName)
+  const isGemini4Argon = /^gemini-4-argon/i.test(baseName)
+  const isGemini4Carbon = /^gemini-4-carbon/i.test(baseName)
   const isGptOss120b = /^gpt-oss-120b(?:-medium)?$/i.test(baseName)
+
+  if (isGemini4Argon && quotaPreference === 'antigravity') {
+    return {
+      actualModel: getGemini4ArgonAntigravityModel(tier ?? 'high'),
+      thinkingBudget: getAgyGeminiFlashThinkingBudget(tier ?? 'high', -1),
+      tier: tier ?? 'high',
+      isThinkingModel: true,
+      quotaPreference,
+      explicitQuota,
+    }
+  }
+
+  if (isGemini4Carbon && quotaPreference === 'antigravity') {
+    return {
+      actualModel: getGemini4CarbonAntigravityModel(tier ?? 'high'),
+      thinkingBudget: getAgyGeminiFlashThinkingBudget(tier ?? 'high', -1),
+      tier: tier ?? 'high',
+      isThinkingModel: true,
+      quotaPreference,
+      explicitQuota,
+    }
+  }
 
   if (isGemini31Pro && quotaPreference === 'antigravity') {
     return {
@@ -312,6 +346,34 @@ export function resolveModelWithTier(
       actualModel: resolvedModel,
       isThinkingModel: false,
       isImageModel: true,
+      quotaPreference,
+      explicitQuota,
+    }
+  }
+
+  // Claude 5.5 wire models (claude-{opus,sonnet}-5-5-{low,medium,high}) encode
+  // the thinking tier directly in the model id. Resolve 5.5 requests to their
+  // tiered wire model (defaulting to medium if no tier is given).
+  // Claude 4.6 routes (claude-sonnet-4-6, claude-opus-4-6-thinking) remain
+  // untiered and route directly to their 4.6 wire models for standard accounts.
+  const claude55Match = /^claude-(opus|sonnet)-5-5/i.exec(resolvedModel)
+  if (claude55Match && quotaPreference === 'antigravity') {
+    const family = claude55Match[1]!.toLowerCase()
+    const rawSuffix = resolvedModel.match(TIER_REGEX)?.[1]
+    // Claude 5.5 wire models use low/medium/high — no minimal tier.
+    const suffixTier: ThinkingTier | undefined =
+      rawSuffix === 'minimal'
+        ? 'medium'
+        : (rawSuffix as ThinkingTier | undefined)
+    const selectedTier: ThinkingTier = tier ?? suffixTier ?? 'medium'
+    return {
+      actualModel:
+        family === 'sonnet'
+          ? getClaudeSonnet55Model(selectedTier)
+          : getClaudeOpus55Model(selectedTier),
+      thinkingBudget: 1024,
+      tier: selectedTier,
+      isThinkingModel: true,
       quotaPreference,
       explicitQuota,
     }
@@ -555,6 +617,23 @@ export function resolveModelWithVariant(
       actualModel,
       thinkingLevel: level,
       thinkingBudget: undefined,
+      configSource: 'variant',
+    }
+  }
+
+  // Claude 5.5 encodes the thinking tier in the wire model id, so a variant
+  // budget selects the actual model instead of only adjusting the budget.
+  if (/^claude-(opus|sonnet)-5-5-/.test(base.actualModel)) {
+    const claudeTier: ThinkingTier =
+      budget <= 8192 ? 'low' : budget <= 16384 ? 'medium' : 'high'
+    const isSonnet = base.actualModel.includes('sonnet')
+    return {
+      ...base,
+      actualModel: isSonnet
+        ? getClaudeSonnet55Model(claudeTier)
+        : getClaudeOpus55Model(claudeTier),
+      tier: claudeTier,
+      thinkingBudget: base.thinkingBudget,
       configSource: 'variant',
     }
   }

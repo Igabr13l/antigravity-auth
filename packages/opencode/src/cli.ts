@@ -2,10 +2,11 @@ import { execFile } from 'node:child_process'
 import { createInterface } from 'node:readline/promises'
 import { promisify } from 'node:util'
 
-import type {
-  AccountMetadataV3,
-  AccountQuotaResult,
-  AccountStorageV4,
+import {
+  type AccountMetadataV3,
+  type AccountQuotaResult,
+  type AccountStorageV4,
+  resolveAccountPlanTier,
 } from '@cortexkit/antigravity-auth-core'
 import { authorizeAntigravity, exchangeAntigravity } from './antigravity/oauth'
 import {
@@ -127,6 +128,7 @@ function accountSummary(storage: AccountStorageV4 | null) {
     accounts: (storage?.accounts ?? []).map((account, index) => ({
       index: index + 1,
       email: account.email ?? `Account ${index + 1}`,
+      plan: resolveAccountPlanTier(account),
       status: accountStatus(account),
     })),
   }
@@ -230,10 +232,11 @@ export async function runCli(
         parsed.value.json
           ? `${JSON.stringify(summary)}\n`
           : formatTable(
-              ['INDEX', 'EMAIL', 'STATUS'],
+              ['INDEX', 'EMAIL', 'PLAN', 'STATUS'],
               summary.accounts.map((account) => [
                 String(account.index),
                 account.email,
+                account.plan,
                 account.status,
               ]),
             ),

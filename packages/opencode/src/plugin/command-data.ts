@@ -43,6 +43,11 @@
 import { createHash } from 'node:crypto'
 
 import {
+  formatPlanTier,
+  type PlanTier,
+  resolveAccountPlanTier,
+} from '@cortexkit/antigravity-auth-core/plan-tier'
+import {
   buildSidebarMachineStateFromAccounts,
   normalizeLegacyCachedQuota,
   type SidebarAccountRedactionInput,
@@ -160,6 +165,10 @@ export interface CommandAccountRow {
   }>
   /** Captured plan tier. Absent when unknown; never defaulted. */
   tier?: { id: string; capturedAt: number }
+  /** Resolved subscription plan tier (free, plus, pro, ultra). */
+  planTier?: PlanTier
+  /** Formatted plan tier string for display (Free, Plus, Pro, Ultra). */
+  formattedPlanTier?: string
 }
 
 /**
@@ -260,6 +269,8 @@ function toCommandAccountRow(entry: LiveAccountSnapshot): CommandAccountRow {
     })
   }
   const label = `Account ${entry.index + 1}`
+  const planTier = resolveAccountPlanTier(entry)
+  const formattedPlanTier = formatPlanTier(planTier)
   return {
     id: `acct-${entry.index}`,
     index: entry.index,
@@ -270,6 +281,8 @@ function toCommandAccountRow(entry: LiveAccountSnapshot): CommandAccountRow {
     healthScore: entry.healthScore,
     quota,
     tier: toCapturedTier(entry),
+    planTier,
+    formattedPlanTier,
   }
 }
 

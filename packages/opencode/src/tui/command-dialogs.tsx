@@ -195,14 +195,18 @@ function renderLoggingDialog(
 function formatQuotaRowLine(row: CommandAccountRow): string {
   const status = row.enabled ? '' : ' (disabled)'
   const current = row.current ? ' *' : ''
+  const plan =
+    row.planTier && row.planTier !== 'unknown' && row.formattedPlanTier
+      ? ` [${row.formattedPlanTier}]`
+      : ''
   if (row.quota.length === 0) {
-    return `${row.label}${status}${current}: no cached quota`
+    return `${row.label}${plan}${status}${current}: no cached quota`
   }
   const parts = row.quota.map((q) => {
     const pct = q.remainingPercent == null ? '–%' : `${q.remainingPercent}%`
     return `${q.label} ${pct}`
   })
-  return `${row.label}${status}${current}: ${parts.join(', ')}`
+  return `${row.label}${plan}${status}${current}: ${parts.join(', ')}`
 }
 
 /**

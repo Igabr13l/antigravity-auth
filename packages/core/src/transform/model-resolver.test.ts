@@ -144,6 +144,12 @@ describe('resolveModelWithTier', () => {
         4000,
         'medium',
       ],
+      [
+        'antigravity-gemini-3.8-flash-minimal',
+        'gemini-3.8-flash-low',
+        500,
+        'minimal',
+      ],
       ['antigravity-gemini-3.8-flash-low', 'gemini-3.8-flash-low', 1000, 'low'],
       [
         'antigravity-gemini-3.8-flash-medium',
@@ -157,6 +163,36 @@ describe('resolveModelWithTier', () => {
         -1,
         'high',
       ],
+    ])('maps %s to the captured AGY route', (requestedModel, actualModel, thinkingBudget, tier) => {
+      const result = resolveModelWithTier(requestedModel)
+      expect(result.actualModel).toBe(actualModel)
+      expect(result.thinkingBudget).toBe(thinkingBudget)
+      expect(result.thinkingLevel).toBeUndefined()
+      expect(result.tier).toBe(tier)
+      expect(result.quotaPreference).toBe('antigravity')
+    })
+  })
+
+  describe('Gemini 4 Argon and Carbon Antigravity routes', () => {
+    it.each([
+      ['antigravity-gemini-4-argon', 'gemini-4-argon-high', -1, 'high'],
+      ['antigravity-gemini-4-argon-low', 'gemini-4-argon-low', 1000, 'low'],
+      [
+        'antigravity-gemini-4-argon-medium',
+        'gemini-4-argon-medium',
+        4000,
+        'medium',
+      ],
+      ['antigravity-gemini-4-argon-high', 'gemini-4-argon-high', -1, 'high'],
+      ['antigravity-gemini-4-carbon', 'gemini-4-carbon-high', -1, 'high'],
+      ['antigravity-gemini-4-carbon-low', 'gemini-4-carbon-low', 1000, 'low'],
+      [
+        'antigravity-gemini-4-carbon-medium',
+        'gemini-4-carbon-medium',
+        4000,
+        'medium',
+      ],
+      ['antigravity-gemini-4-carbon-high', 'gemini-4-carbon-high', -1, 'high'],
     ])('maps %s to the captured AGY route', (requestedModel, actualModel, thinkingBudget, tier) => {
       const result = resolveModelWithTier(requestedModel)
       expect(result.actualModel).toBe(actualModel)
@@ -292,6 +328,27 @@ describe('resolveModelWithTier', () => {
       expect(result.isThinkingModel).toBe(true)
       expect(result.thinkingBudget).toBe(1024)
       expect(result.quotaPreference).toBe('antigravity')
+    })
+
+    it('resolves Claude 5.5 tiered models to their wire models', () => {
+      expect(
+        resolveModelWithTier('antigravity-claude-opus-5-5-thinking'),
+      ).toEqual({
+        actualModel: 'claude-opus-5-5-medium',
+        thinkingBudget: 1024,
+        tier: 'medium',
+        isThinkingModel: true,
+        quotaPreference: 'antigravity',
+        explicitQuota: true,
+      })
+      expect(
+        resolveModelWithTier('antigravity-claude-opus-5-5-thinking-high')
+          .actualModel,
+      ).toBe('claude-opus-5-5-high')
+      expect(
+        resolveModelWithTier('antigravity-claude-sonnet-5-5-thinking-low')
+          .actualModel,
+      ).toBe('claude-sonnet-5-5-low')
     })
 
     it('maps legacy and suffixed Claude 4.6 variants to untiered wire models', () => {

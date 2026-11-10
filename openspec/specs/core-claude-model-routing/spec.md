@@ -12,23 +12,25 @@ fixed 1024-token thinking budget.
 
 ## Requirements
 
-### Requirement: Claude 4.6 model catalog exposure
+### Requirement: Claude 4.6 and 5.5 model catalog exposure
 
-The model registry SHALL expose exactly two public Claude thinking models:
-`antigravity-claude-opus-4-6-thinking` and
-`antigravity-claude-sonnet-4-6-thinking`. Both models SHALL specify
-`reasoning: true`, a 250 000 context limit, a 64 000 output token limit, and
-disabled automatic `low`/`high` variants (`variants: { low: { disabled: true },
-high: { disabled: true } }`). Claude 5.5 model identifiers SHALL NOT be present
-in `OPENCODE_MODEL_DEFINITIONS`.
+The model registry SHALL expose both native Claude 4.6 thinking models
+(`antigravity-claude-opus-4-6-thinking` and
+`antigravity-claude-sonnet-4-6-thinking`) and tiered Claude 5.5 thinking models
+(`antigravity-claude-opus-5-5-thinking` and
+`antigravity-claude-sonnet-5-5-thinking`). All four models SHALL specify
+`reasoning: true`, a 250 000 context limit, and a 64 000 output token limit.
+Claude 4.6 models SHALL specify disabled automatic `low`/`high` variants
+(`variants: { low: { disabled: true }, high: { disabled: true } }`), while
+Claude 5.5 models SHALL expose selectable `low`, `medium`, and `high` variants.
 
 #### Scenario: Inspecting public model definitions
 
 - **WHEN** a client calls `getPublicModelDefinitions()`
-- **THEN** both `antigravity-claude-opus-4-6-thinking` and
-  `antigravity-claude-sonnet-4-6-thinking` are present
-- **AND** `antigravity-claude-opus-5-5-thinking` and
-  `antigravity-claude-sonnet-5-5-thinking` are absent
+- **THEN** `antigravity-claude-opus-4-6-thinking`,
+  `antigravity-claude-sonnet-4-6-thinking`,
+  `antigravity-claude-opus-5-5-thinking`, and
+  `antigravity-claude-sonnet-5-5-thinking` are all present
 
 ### Requirement: Claude 4.6 wire model resolution
 

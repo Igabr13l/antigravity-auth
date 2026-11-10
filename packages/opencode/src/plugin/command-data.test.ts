@@ -76,6 +76,7 @@ interface AccountFixture {
   coolingDownUntil?: number
   healthScore?: number
   capturedTierId?: string
+  capturedPaidTierId?: string
   capturedTierAt?: number
 }
 
@@ -231,6 +232,7 @@ function makeHarness(options: {
         coolingDownUntil: entry.coolingDownUntil,
         healthScore: entry.healthScore,
         capturedTierId: entry.capturedTierId,
+        capturedPaidTierId: entry.capturedPaidTierId,
         capturedTierAt: entry.capturedTierAt,
       }))
     },
@@ -456,6 +458,34 @@ describe('createCommandDataService', () => {
       enabled: false,
       current: false,
     })
+  })
+
+  it('populates planTier and formattedPlanTier on command account rows', async () => {
+    const harness = makeHarness({
+      accounts: [
+        makeAccountFixture({
+          refreshToken: 'refresh-free',
+          capturedTierId: 'free-tier',
+        }),
+        makeAccountFixture({
+          refreshToken: 'refresh-pro',
+          capturedTierId: 'free-tier',
+          capturedPaidTierId: 'pro-tier',
+        }),
+        makeAccountFixture({
+          refreshToken: 'refresh-ultra',
+          capturedPaidTierId: 'g1-ultra',
+        }),
+      ],
+    })
+
+    const rows = await harness.service.listAccounts()
+    expect(rows[0]?.planTier).toBe('free')
+    expect(rows[0]?.formattedPlanTier).toBe('Free')
+    expect(rows[1]?.planTier).toBe('pro')
+    expect(rows[1]?.formattedPlanTier).toBe('Pro')
+    expect(rows[2]?.planTier).toBe('ultra')
+    expect(rows[2]?.formattedPlanTier).toBe('Ultra')
   })
 
   it('listAccounts() is a pure cache read — opening performs zero refresh calls', async () => {

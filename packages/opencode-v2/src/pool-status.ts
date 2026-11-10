@@ -9,7 +9,12 @@ import { createHash } from 'node:crypto'
 import type {
   AccountStorageV4,
   AnyAccountStorage,
+  PlanTier,
   QuotaGroupSummary,
+} from '@cortexkit/antigravity-auth-core'
+import {
+  formatPlanTier,
+  resolveAccountPlanTier,
 } from '@cortexkit/antigravity-auth-core'
 
 /** Per-family quota aggregates for one account (gemini + claude/gpt-oss). */
@@ -43,6 +48,8 @@ export interface AccountStatus {
   readonly cooldownUntil: number
   /** Cached quota aggregates, attached by the caller when available. */
   readonly quota?: QuotaGroups
+  /** Resolved subscription plan tier (free, plus, pro, ultra). */
+  readonly planTier?: PlanTier
 }
 
 export interface AccountPoolStatus {
@@ -210,11 +217,13 @@ export function summarizeAccountPool(
     else if (isVerificationRequired(account)) state = 'verification'
     else if (!enabledOf(account)) state = 'disabled'
     else if (cooling.length > 0) state = 'rate-limited'
+    const planTier = resolveAccountPlanTier(account)
     return {
       key: accountKey(account, index),
       index,
       maskedEmail: email ? maskEmail(email) : undefined,
       state,
+      planTier,
       coolingFamilies: cooling,
       cooldownUntil: cooling.reduce((latest, family) => {
         const until = resets[family] ?? 0
@@ -473,6 +482,8 @@ export interface SidebarRow {
   readonly badge?: string
   /** Color for state badge */
   readonly badgeFg?: string
+  /** Resolved subscription plan tier display (e.g. 'Pro', 'Ultra', 'Free') */
+  readonly plan?: string
 }
 
 const BAR_WIDTH = 10
@@ -672,6 +683,11 @@ export function sidebarRows(
     badgeFg = ACTIVE_BLUE
   }
 
+  const plan =
+    account.planTier && account.planTier !== 'unknown'
+      ? formatPlanTier(account.planTier)
+      : undefined
+
   const identity = badge ? `${glyph} ${label} · ${badge}` : `${glyph} ${label}`
 
   const rows: SidebarRow[] = [
@@ -683,6 +699,7 @@ export function sidebarRows(
       label,
       badge,
       badgeFg,
+      plan,
     },
   ]
 

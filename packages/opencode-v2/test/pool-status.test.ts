@@ -160,6 +160,24 @@ describe('summarizeAccountPool', () => {
     expect(diffAccountPoolStatus(before, after)).toEqual([])
   })
 
+  test('resolves planTier for accounts in pool summary', () => {
+    const status = summarizeAccountPool(
+      pool([
+        { email: 'free@example.test', capturedTierId: 'free-tier' },
+        {
+          email: 'pro@example.test',
+          capturedTierId: 'free-tier',
+          capturedPaidTierId: 'pro-tier',
+        },
+        { email: 'ultra@example.test', capturedPaidTierId: 'g1-ultra' },
+      ]),
+      NOW,
+    )
+    expect(status.accounts[0]?.planTier).toBe('free')
+    expect(status.accounts[1]?.planTier).toBe('pro')
+    expect(status.accounts[2]?.planTier).toBe('ultra')
+  })
+
   test('never leaks the raw address through the account key', () => {
     const status = summarizeAccountPool(
       pool([{ email: 'alice@example.test' }]),

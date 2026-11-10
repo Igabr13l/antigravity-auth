@@ -235,6 +235,8 @@ function log(...args: unknown[]): void {
 // example/opencode.json. Exported so the drift-guard test can assert the two
 // stay in sync.
 export const ROUTABLE_MODEL_IDS: ReadonlySet<string> = new Set([
+  'gemini-4-argon',
+  'gemini-4-carbon',
   'gemini-3.8-flash',
   'gemini-3.7-flash',
   'gemini-3.6-flash',
@@ -243,6 +245,8 @@ export const ROUTABLE_MODEL_IDS: ReadonlySet<string> = new Set([
   'gemini-3.1-flash-image',
   'claude-sonnet-4-6-thinking',
   'claude-opus-4-6-thinking',
+  'claude-sonnet-5-5-thinking',
+  'claude-opus-5-5-thinking',
   'gpt-oss-120b-medium',
 ])
 

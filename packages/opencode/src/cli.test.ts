@@ -203,8 +203,18 @@ describe('runCli commands', () => {
     const value = JSON.parse(harness.stdout) as unknown
     expect(value).toEqual({
       accounts: [
-        { index: 1, email: 'alpha@example.com', status: 'active' },
-        { index: 2, email: 'disabled@example.com', status: 'disabled' },
+        {
+          index: 1,
+          email: 'alpha@example.com',
+          plan: 'unknown',
+          status: 'active',
+        },
+        {
+          index: 2,
+          email: 'disabled@example.com',
+          plan: 'unknown',
+          status: 'disabled',
+        },
       ],
     })
     expect(harness.stdout).not.toContain('refresh-secret')
@@ -219,9 +229,9 @@ describe('runCli commands', () => {
 
     expect(await runCli(['list'], harness.deps)).toBe(0)
     expect(harness.stdout).toBe(
-      'INDEX  EMAIL                 STATUS\n' +
-        '1      alpha@example.com     active\n' +
-        '2      disabled@example.com  disabled\n',
+      'INDEX  EMAIL                 PLAN     STATUS\n' +
+        '1      alpha@example.com     unknown  active\n' +
+        '2      disabled@example.com  unknown  disabled\n',
     )
   })
 

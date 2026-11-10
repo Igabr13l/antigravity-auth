@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'bun:test'
 
 import {
+  getClaudeOpus55Model,
+  getClaudeSonnet55Model,
+  getGemini4ArgonAntigravityModel,
+  getGemini4CarbonAntigravityModel,
   getGemini35FlashAntigravityModel,
   getGemini35FlashGeminiCliFallbackModel,
   getGemini36FlashAntigravityModel,
@@ -30,13 +34,17 @@ describe('model registry', () => {
 
     expect(modelNames).toEqual([
       'antigravity-claude-opus-4-6-thinking',
+      'antigravity-claude-opus-5-5-thinking',
       'antigravity-claude-sonnet-4-6-thinking',
+      'antigravity-claude-sonnet-5-5-thinking',
       'antigravity-gemini-3.1-flash-image',
       'antigravity-gemini-3.1-pro',
       'antigravity-gemini-3.5-flash',
       'antigravity-gemini-3.6-flash',
       'antigravity-gemini-3.7-flash',
       'antigravity-gemini-3.8-flash',
+      'antigravity-gemini-4-argon',
+      'antigravity-gemini-4-carbon',
       'antigravity-gpt-oss-120b-medium',
     ])
 
@@ -96,10 +104,14 @@ describe('model registry', () => {
     expect(getGemini38FlashAntigravityModel('low')).toBe('gemini-3.8-flash-low')
   })
 
-  it('exposes untiered Claude 4.6 models with disabled variants', () => {
+  it('exposes untiered Claude 4.6 models and tiered Claude 5.5 + Gemini 4 Argon/Carbon models', () => {
     const definitions = getPublicModelDefinitions()
     const opus = definitions['antigravity-claude-opus-4-6-thinking']
     const sonnet = definitions['antigravity-claude-sonnet-4-6-thinking']
+    const opus55 = definitions['antigravity-claude-opus-5-5-thinking']
+    const sonnet55 = definitions['antigravity-claude-sonnet-5-5-thinking']
+    const argon = definitions['antigravity-gemini-4-argon']
+    const carbon = definitions['antigravity-gemini-4-carbon']
 
     expect(opus?.name).toBe('Claude Opus 4.6 Thinking (Antigravity)')
     expect(opus?.variants).toEqual({
@@ -113,12 +125,37 @@ describe('model registry', () => {
       high: { disabled: true },
     })
 
-    expect(definitions).not.toHaveProperty(
-      'antigravity-claude-opus-5-5-thinking',
+    expect(opus55?.name).toBe('Claude Opus 5.5 (Thinking)')
+    expect(opus55?.variants).toEqual({
+      low: { thinkingConfig: { thinkingBudget: 8192 } },
+      medium: { thinkingConfig: { thinkingBudget: 16384 } },
+      high: { thinkingConfig: { thinkingBudget: 32768 } },
+    })
+
+    expect(sonnet55?.name).toBe('Claude Sonnet 5.5 (Thinking)')
+    expect(sonnet55?.variants).toEqual({
+      low: { thinkingConfig: { thinkingBudget: 8192 } },
+      medium: { thinkingConfig: { thinkingBudget: 16384 } },
+      high: { thinkingConfig: { thinkingBudget: 32768 } },
+    })
+
+    expect(argon?.name).toBe('Gemini 4 Argon (Antigravity)')
+    expect(argon?.variants).toEqual({
+      low: { thinkingLevel: 'low' },
+      medium: { thinkingLevel: 'medium' },
+      high: { thinkingLevel: 'high' },
+    })
+    expect(getGemini4ArgonAntigravityModel()).toBe('gemini-4-argon-high')
+    expect(getGemini4ArgonAntigravityModel('low')).toBe('gemini-4-argon-low')
+    expect(getGemini4ArgonAntigravityModel('medium')).toBe(
+      'gemini-4-argon-medium',
     )
-    expect(definitions).not.toHaveProperty(
-      'antigravity-claude-sonnet-5-5-thinking',
-    )
+    expect(getGemini4ArgonAntigravityModel('high')).toBe('gemini-4-argon-high')
+
+    expect(carbon?.name).toBe('Gemini 4 Carbon (Antigravity)')
+    expect(getGemini4CarbonAntigravityModel()).toBe('gemini-4-carbon-high')
+    expect(getClaudeOpus55Model()).toBe('claude-opus-5-5-medium')
+    expect(getClaudeSonnet55Model()).toBe('claude-sonnet-5-5-medium')
   })
 
   it('keeps resolver aliases for supported agy CLI variants', () => {
@@ -174,5 +211,69 @@ describe('model registry', () => {
         output: ['text', 'image'],
       },
     })
+  })
+
+  it('exposes full thinking variants on Gemini Flash models', () => {
+    const definitions = getPublicModelDefinitions()
+    const flash38 = definitions['antigravity-gemini-3.8-flash']
+    expect(flash38?.variants).toEqual({
+      minimal: { thinkingLevel: 'minimal' },
+      low: { thinkingLevel: 'low' },
+      medium: { thinkingLevel: 'medium' },
+      high: { thinkingLevel: 'high' },
+    })
+  })
+
+  it('annotates model definitions with minimum plan tier requirements', () => {
+    const definitions = getPublicModelDefinitions()
+    expect(definitions['antigravity-gemini-4-carbon']?.minPlan).toBe('ultra')
+    expect(definitions['antigravity-claude-opus-5-5-thinking']?.minPlan).toBe(
+      'pro',
+    )
+    expect(definitions['antigravity-claude-opus-4-6-thinking']?.minPlan).toBe(
+      'pro',
+    )
+    expect(definitions['antigravity-claude-sonnet-5-5-thinking']?.minPlan).toBe(
+      'plus',
+    )
+    expect(definitions['antigravity-claude-sonnet-4-6-thinking']?.minPlan).toBe(
+      'plus',
+    )
+    expect(definitions['antigravity-gemini-4-argon']?.minPlan).toBe('plus')
+    expect(definitions['antigravity-gpt-oss-120b-medium']?.minPlan).toBe('plus')
+    expect(definitions['antigravity-gemini-3.8-flash']?.minPlan).toBe('free')
+  })
+
+  it('supports dynamic model registration and clearing', () => {
+    const {
+      registerDynamicModels,
+      clearDynamicModels,
+    } = require('./model-registry.ts')
+    try {
+      registerDynamicModels({
+        'antigravity-custom-test': {
+          id: 'antigravity-custom-test',
+          name: 'Custom Test Model',
+          release_date: '',
+          attachment: false,
+          reasoning: true,
+          temperature: true,
+          tool_call: true,
+          limit: { context: 1000, output: 500 },
+          modalities: { input: ['text'], output: ['text'] },
+          cost: { input: 0, output: 0 },
+          options: {},
+          minPlan: 'plus',
+        },
+      })
+      expect(getPublicModelDefinitions()).toHaveProperty(
+        'antigravity-custom-test',
+      )
+    } finally {
+      clearDynamicModels()
+    }
+    expect(getPublicModelDefinitions()).not.toHaveProperty(
+      'antigravity-custom-test',
+    )
   })
 })

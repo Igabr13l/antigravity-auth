@@ -46,6 +46,7 @@ import { createElement as _$createElement } from "opentui:runtime-module:%40open
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { formatPlanTier, normalizePlanTier } from "@cortexkit/antigravity-auth-core/plan-tier";
 import { createSlot } from "opentui:runtime-module:%40opentui%2Fsolid";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "opentui:runtime-module:solid-js";
 import { createRpcClient } from "./rpc/rpc-client";
@@ -546,9 +547,16 @@ function AccountBlock(props) {
     if (typeof cd !== 'number') return 0;
     return Math.max(0, cd - props.now());
   };
+  const planLabel = () => {
+    const raw = props.account.tier?.paidId ?? props.account.tier?.id;
+    if (!raw) return '';
+    const tier = normalizePlanTier(raw);
+    return tier === 'unknown' ? '' : formatPlanTier(tier);
+  };
   const healthText = () => {
     const base = `health ${Math.round(clamp(props.account.health, 0, 100))}`;
-    return cooldownMs() > 0 ? `${base} · cooling ${formatWait(cooldownMs())}` : base;
+    const plan = planLabel() ? ` · ${planLabel()}` : '';
+    return cooldownMs() > 0 ? `${base}${plan} · cooling ${formatWait(cooldownMs())}` : `${base}${plan}`;
   };
   return (() => {
     var _el$19 = _$createElement("box"),
