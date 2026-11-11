@@ -20,7 +20,7 @@ export interface ModelLimit {
 }
 
 export type ModelModality = 'text' | 'image' | 'pdf'
-export type ModelQuotaGroup = 'gemini' | 'non-gemini'
+export type ModelQuotaGroup = 'gemini' | 'argon' | 'non-gemini'
 
 export interface ModelModalities {
   input: ModelModality[]
@@ -458,11 +458,11 @@ const QUOTA_GROUP_BY_MODEL_ID: Record<string, ModelQuotaGroup> = {
   'claude-sonnet-5-5-medium': 'non-gemini',
   'claude-sonnet-5-5-high': 'non-gemini',
   'claude-sonnet-5-5-thinking': 'non-gemini',
-  'gemini-4-argon': 'gemini',
-  'gemini-4-argon-minimal': 'gemini',
-  'gemini-4-argon-low': 'gemini',
-  'gemini-4-argon-medium': 'gemini',
-  'gemini-4-argon-high': 'gemini',
+  'gemini-4-argon': 'argon',
+  'gemini-4-argon-minimal': 'argon',
+  'gemini-4-argon-low': 'argon',
+  'gemini-4-argon-medium': 'argon',
+  'gemini-4-argon-high': 'argon',
   'gemini-4-carbon': 'gemini',
   'gemini-4-carbon-minimal': 'gemini',
   'gemini-4-carbon-low': 'gemini',
@@ -616,10 +616,28 @@ export function getQuotaGroupForModel(
     // a `gemini-` namespace) attributes to the non-gemini pool rather
     // than the gemini pool. Substring matching is required because the
     // alias IDs start with `gemini-` but contain `claude`.
-    (normalized.includes('claude') || normalized.includes('gpt-oss')
-      ? 'non-gemini'
-      : normalized.startsWith('gemini') || normalized.startsWith('tab_')
-        ? 'gemini'
-        : undefined)
+    (normalized.includes('argon')
+      ? 'argon'
+      : normalized.includes('claude') || normalized.includes('gpt-oss')
+        ? 'non-gemini'
+        : normalized.startsWith('gemini') || normalized.startsWith('tab_')
+          ? 'gemini'
+          : undefined)
+  )
+}
+
+/**
+ * Returns true when a model only exists on Antigravity endpoints (daily/autopush)
+ * and should not fall back to the Gemini CLI prod endpoint on 503/529 capacity errors.
+ */
+export function isAntigravityOnlyModel(modelId: string): boolean {
+  const normalized = modelId.toLowerCase().replace(/^antigravity-/, '')
+  return (
+    normalized.includes('claude') ||
+    normalized.includes('gpt-oss') ||
+    normalized.includes('image') ||
+    normalized.includes('imagen') ||
+    normalized.startsWith('tab_') ||
+    normalized.startsWith('gemini-4-')
   )
 }

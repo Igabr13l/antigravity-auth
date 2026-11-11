@@ -273,6 +273,7 @@ export function resolveQuotaGroup(
     // namespace) attributes to the non-gemini pool. The model-registry
     // check above already handles registered aliases; this substring
     // fallback mirrors the same precedence rule for unregistered models.
+    if (lower.includes('argon')) return 'argon'
     if (lower.includes('claude') || lower.includes('gpt-oss')) {
       return 'non-gemini'
     }
@@ -1159,11 +1160,28 @@ export class AccountManager {
 
     if (candidates.length === 0) return null
 
+    const currentAccount =
+      currentIndex >= 0
+        ? this.accounts.find((acc) => acc.index === currentIndex)
+        : undefined
+    const planEligibleCandidates = model
+      ? candidates.filter((acc) => isAccountEligibleForModel(acc, model))
+      : candidates
+    const isCurrentPlanEligible =
+      !model ||
+      !currentAccount ||
+      isAccountEligibleForModel(currentAccount, model)
+    if (model && planEligibleCandidates.length === 0 && isCurrentPlanEligible) {
+      return null
+    }
+    const eligibleCandidates =
+      planEligibleCandidates.length > 0 ? planEligibleCandidates : candidates
+
     const usedAccounts = this.getUsedAccounts(identity)
-    const warmCandidates = candidates.filter((account) =>
+    const warmCandidates = eligibleCandidates.filter((account) =>
       usedAccounts.has(account.index),
     )
-    const pool = warmCandidates.length > 0 ? warmCandidates : candidates
+    const pool = warmCandidates.length > 0 ? warmCandidates : eligibleCandidates
 
     const quotaGroup = resolveQuotaGroup(family, model)
     pool.sort((a, b) => {

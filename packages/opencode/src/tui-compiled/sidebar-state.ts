@@ -52,7 +52,7 @@ import { xdgState } from 'xdg-basedir'
 
 export const SIDEBAR_STATE_VERSION = 1 as const
 
-export type SidebarQuotaKey = 'gemini' | 'non-gemini'
+export type SidebarQuotaKey = 'gemini' | 'argon' | 'non-gemini'
 
 export interface SidebarQuotaWindowEntry {
   window: 'weekly' | '5h'
@@ -304,7 +304,7 @@ function normalizeAccount(input: unknown): SidebarAccountState | null {
   const quotaRaw = record.quota
   const quota: SidebarAccountState['quota'] = {}
   if (isObject(quotaRaw)) {
-    for (const key of ['gemini', 'non-gemini'] as const) {
+    for (const key of ['gemini', 'argon', 'non-gemini'] as const) {
       const entry = (quotaRaw as Record<string, unknown>)[key]
       const normalized = normalizeQuota(entry)
       if (normalized) quota[key] = normalized
@@ -498,6 +498,15 @@ export interface SidebarAccountRedactionInput {
         resetTime: string
       }>
     }
+    argon?: {
+      remainingFraction?: number
+      resetTime?: string
+      windows?: Array<{
+        window: 'weekly' | '5h'
+        remainingFraction: number
+        resetTime: string
+      }>
+    }
     'non-gemini'?: {
       remainingFraction?: number
       resetTime?: string
@@ -646,8 +655,11 @@ export function normalizeLegacyCachedQuota(
       minFraction(raw.claude as PoolEntry, raw['gpt-oss'] as PoolEntry),
     ) ?? raw['non-gemini']
 
+  const argon = raw.argon
+
   return {
     ...(gemini !== undefined ? { gemini } : {}),
+    ...(argon !== undefined ? { argon } : {}),
     ...(nonGemini !== undefined ? { 'non-gemini': nonGemini } : {}),
   }
 }
@@ -759,7 +771,7 @@ export function redactAccountForSidebar(
     ? undefined
     : normalizeLegacyCachedQuota(source.cachedQuota)
   if (cached) {
-    for (const key of ['gemini', 'non-gemini'] as const) {
+    for (const key of ['gemini', 'argon', 'non-gemini'] as const) {
       const entry = cached[key]
       if (!entry) continue
       const projected = projectQuotaPoolForSidebar(entry)

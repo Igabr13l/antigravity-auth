@@ -859,6 +859,34 @@ describe('windows rework — producer seam tests', () => {
     // Stamp mismatch → cachedQuota dropped → no quota in the redacted output.
     expect(Object.keys(redacted.quota)).toHaveLength(0)
   })
+
+  it('preserves canonical argon alongside collapsed legacy keys in normalizeLegacyCachedQuota and redactAccountForSidebar', () => {
+    const normalized = normalizeLegacyCachedQuota({
+      'gemini-pro': { remainingFraction: 0.8 },
+      argon: { remainingFraction: 0.35, resetTime: '2026-08-01T00:00:00Z' },
+      claude: { remainingFraction: 0.5 },
+    })
+    expect(normalized).toEqual({
+      gemini: { remainingFraction: 0.8 },
+      argon: { remainingFraction: 0.35, resetTime: '2026-08-01T00:00:00Z' },
+      'non-gemini': { remainingFraction: 0.5 },
+    })
+
+    const redacted = redactAccountForSidebar({
+      index: 0,
+      cachedQuota: {
+        gemini: { remainingFraction: 0.8 },
+        argon: {
+          remainingFraction: 0.35,
+          resetTime: '2026-08-01T00:00:00Z',
+        },
+        'non-gemini': { remainingFraction: 0.5 },
+      },
+    })
+    expect(redacted.quota.argon?.remainingPercent).toBe(35)
+    expect(redacted.quota.gemini?.remainingPercent).toBe(80)
+    expect(redacted.quota['non-gemini']?.remainingPercent).toBe(50)
+  })
 })
 
 describe('render boundary — current flag', () => {

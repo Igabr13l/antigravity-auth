@@ -3,14 +3,19 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { AccountMetadataV3 } from './account-types.ts'
 import {
+  aggregateQuota,
   aggregateQuotaSummary,
+  classifyQuotaGroup,
   createQuotaManager,
   type FetchAccountQuota,
   fetchQuotaSummary,
   type RetrieveUserQuotaSummaryBucket,
   type RetrieveUserQuotaSummaryResponse,
 } from './quota-manager.ts'
-import type { AccountQuotaResult } from './quota-types.ts'
+import {
+  type AccountQuotaResult,
+  normalizeLegacyCachedQuota,
+} from './quota-types.ts'
 
 function makeAccount(
   overrides: Partial<AccountMetadataV3> = {},
@@ -1270,5 +1275,106 @@ describe('fetchQuotaSummary', () => {
     expect(triedProjects[0]).toBe('managed-proj')
     expect(triedProjects[1]).toBe('regular-proj')
     expect(result.summary).toEqual(summary)
+  })
+})
+
+describe('argon quota pool separation', () => {
+  it('classifies Gemini 4 Argon models into the dedicated argon quota group', () => {
+    expect(classifyQuotaGroup('gemini-4-argon-high')).toBe('argon')
+    expect(classifyQuotaGroup('gemini-4-argon', 'Gemini 4 Argon')).toBe('argon')
+    expect(classifyQuotaGroup('gemini-3.8-flash-high')).toBe('gemini')
+    expect(classifyQuotaGroup('gemini-4-carbon-high')).toBe('gemini')
+    expect(classifyQuotaGroup('claude-sonnet-4-6')).toBe('non-gemini')
+  })
+
+  it('aggregates fetchAvailableModels argon entries separately from gemini', () => {
+    const { groups } = aggregateQuota({
+      'gemini-4-argon-high': {
+        displayName: 'Gemini 4 Argon (High)',
+        quotaInfo: {
+          remainingFraction: 0.35,
+          resetTime: '2026-01-01T05:00:00Z',
+        },
+      },
+      'gemini-3.8-flash': {
+        displayName: 'Gemini 3.8 Flash',
+        quotaInfo: {
+          remainingFraction: 0.9,
+          resetTime: '2026-01-01T06:00:00Z',
+        },
+      },
+      'claude-sonnet-4-6': {
+        displayName: 'Claude Sonnet 4.6',
+        quotaInfo: {
+          remainingFraction: 0.5,
+          resetTime: '2026-01-01T07:00:00Z',
+        },
+      },
+    })
+
+    expect(groups.argon?.remainingFraction).toBe(0.35)
+    expect(groups.argon?.modelCount).toBe(1)
+    expect(groups.gemini?.remainingFraction).toBe(0.9)
+    expect(groups.gemini?.modelCount).toBe(1)
+    expect(groups['non-gemini']?.remainingFraction).toBe(0.5)
+  })
+
+  it('aggregates RUQS argon buckets by bucketId or displayName separately from gemini', () => {
+    const response: RetrieveUserQuotaSummaryResponse = {
+      groups: [
+        {
+          displayName: 'Gemini',
+          buckets: [
+            {
+              bucketId: 'gemini-pro',
+              window: '5h',
+              resetTime: '2026-01-01T06:00:00Z',
+              remainingFraction: 0.95,
+            },
+          ],
+        },
+        {
+          displayName: 'Gemini 4 Argon',
+          buckets: [
+            {
+              bucketId: 'gemini-pro',
+              window: '5h',
+              resetTime: '2026-01-01T05:00:00Z',
+              remainingFraction: 0.25,
+            },
+          ],
+        },
+        {
+          displayName: 'Claude',
+          buckets: [
+            {
+              bucketId: '3p-claude',
+              window: '5h',
+              resetTime: '2026-01-01T07:00:00Z',
+              remainingFraction: 0.6,
+            },
+          ],
+        },
+      ],
+    }
+
+    const { groups } = aggregateQuotaSummary(response)
+    expect(groups.gemini?.remainingFraction).toBe(0.95)
+    expect(groups.argon?.remainingFraction).toBe(0.25)
+    expect(groups['non-gemini']?.remainingFraction).toBe(0.6)
+  })
+
+  it('preserves argon in normalizeLegacyCachedQuota', () => {
+    const normalized = normalizeLegacyCachedQuota({
+      gemini: { remainingFraction: 0.8 },
+      argon: { remainingFraction: 0.2 },
+      claude: { remainingFraction: 0.4 },
+    })
+
+    expect(normalized).toEqual({
+      gemini: { remainingFraction: 0.8 },
+      argon: { remainingFraction: 0.2 },
+      'non-gemini': { remainingFraction: 0.4 },
+    })
   })
 })

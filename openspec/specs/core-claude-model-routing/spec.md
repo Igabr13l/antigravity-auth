@@ -82,3 +82,17 @@ Claude SHALL NOT affect or inspect Gemini-family quota pools.
 - **WHEN** `getQuotaGroupForModel` or `resolveQuotaGroup` is evaluated for
   `claude-sonnet-4-6` or `claude-opus-4-6-thinking`
 - **THEN** the result is `non-gemini`
+
+### Requirement: Antigravity-only model fallback policy
+
+`isAntigravityOnlyModel` SHALL identify models served exclusively on Antigravity
+endpoints (`claude*`, `gpt-oss*`, `gemini-4-*`, `image*`, `imagen*`, `tab_*`)
+so endpoint capacity fallback skips Gemini CLI production
+(`cloudcode-pa.googleapis.com`), while Gemini 3.x and older Gemini CLI-capable
+models remain eligible for endpoint fallback.
+
+#### Scenario: Distinguishing Gemini 4 Argon from Gemini 3.8 Flash fallback
+
+- **WHEN** evaluating `isAntigravityOnlyModel`
+- **THEN** `claude-opus-4-6-thinking` and `gemini-4-argon-high` return `true`
+- **AND** `gemini-3.8-flash-medium` and `gemini-3.1-pro-low` return `false`

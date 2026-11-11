@@ -323,4 +323,43 @@ describe('throwIfAllKilled', () => {
       }),
     ).not.toThrow()
   })
+
+  it('isolates Gemini 4 Argon quota from the general Gemini pool', () => {
+    const accountHealthyArgon = {
+      index: 0,
+      refreshToken: 'rt-argon',
+      cachedQuota: {
+        gemini: { remainingFraction: 0.01, modelCount: 2 },
+        argon: { remainingFraction: 0.85, modelCount: 1 },
+      },
+      cachedQuotaUpdatedAt: NOW,
+    }
+    expect(
+      evaluateKillswitchForAccount(
+        accountHealthyArgon,
+        'gemini',
+        enabledWith(10),
+        { model: 'gemini-4-argon-high', now: NOW },
+      ).allowed,
+    ).toBe(true)
+
+    const accountLowArgon = {
+      index: 1,
+      refreshToken: 'rt-low-argon',
+      cachedQuota: {
+        gemini: { remainingFraction: 0.95, modelCount: 2 },
+        argon: { remainingFraction: 0.03, modelCount: 1 },
+      },
+      cachedQuotaUpdatedAt: NOW,
+    }
+    const decision = evaluateKillswitchForAccount(
+      accountLowArgon,
+      'gemini',
+      enabledWith(10),
+      { model: 'gemini-4-argon-high', now: NOW },
+    )
+    expect(decision.allowed).toBe(false)
+    expect(decision.reason).toBe('below-threshold')
+    expect(decision.remainingPercent).toBe(3)
+  })
 })

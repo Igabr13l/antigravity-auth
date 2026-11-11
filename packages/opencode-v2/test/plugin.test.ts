@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import type { SessionHttpRequest } from '@opencode-ai/plugin/promise/session'
@@ -372,5 +372,525 @@ describe('endpointOwnsAccountQuota', () => {
 
   test('treats unknown hosts as account quota owners', () => {
     expect(endpointOwnsAccountQuota('https://example.test')).toBe(true)
+  })
+})
+
+describe('plan tier capture and capacity fallback routing', () => {
+  test('captures and persists plan tier via ensureProjectContext and loadManagedProject backfill, then routes Opus to Pro account', async () => {
+    const configDir = process.env.OPENCODE_CONFIG_DIR
+    if (!configDir) throw new Error('OPENCODE_CONFIG_DIR is not set')
+    mkdirSync(configDir, { recursive: true })
+    const accountsPath = join(configDir, 'antigravity-accounts.json')
+    writeFileSync(
+      accountsPath,
+      JSON.stringify({
+        version: 4,
+        accounts: [
+          {
+            email: 'free@example.com',
+            refreshToken: 'refresh-free',
+            managedProjectId: 'proj-free',
+            accessToken: 'access-free',
+            expiresAt: Date.now() + 3_600_000,
+            addedAt: 1,
+            lastUsed: 2,
+          },
+          {
+            email: 'pro@example.com',
+            refreshToken: 'refresh-pro',
+            managedProjectId: 'proj-pro',
+            accessToken: 'access-pro',
+            expiresAt: Date.now() + 3_600_000,
+            addedAt: 2,
+            lastUsed: 1,
+          },
+        ],
+        activeIndex: 0,
+        activeIndexByFamily: { claude: 0, gemini: 0 },
+      }),
+    )
+
+    const usedTokens: string[] = []
+    let httpRequestHook:
+      | ((event: SessionHttpRequest) => Promise<void>)
+      | undefined
+    const registration = { dispose: async () => undefined }
+    const adapter = createOpenCodeV2AntigravityPlugin({
+      refreshAntigravityToken: async (refresh) => ({
+        refresh,
+        access: refresh.replace('refresh-', 'access-'),
+        expires: Date.now() + 3_600_000,
+      }),
+      ensureProjectContext: async (auth) => ({
+        auth,
+        effectiveProjectId:
+          auth.access === 'access-free' ? 'proj-free' : 'proj-pro',
+      }),
+      loadManagedProject: async (accessToken) =>
+        accessToken === 'access-free'
+          ? { currentTier: { id: 'free-tier' } }
+          : {
+              currentTier: { id: 'free-tier' },
+              paidTier: { id: 'g1-pro-tier' },
+            },
+      send: async ({ auth }) => {
+        usedTokens.push(auth.access ?? '')
+        return successResponse()
+      },
+    })
+
+    const cleanup = await adapter.setup({
+      session: {
+        hook: async (name: string, callback: unknown) => {
+          if (name === 'http.request') {
+            httpRequestHook = callback as (
+              event: SessionHttpRequest,
+            ) => Promise<void>
+          }
+          return registration
+        },
+      },
+      integration: { transform: async () => registration },
+    } as never)
+
+    try {
+      const makeEvent = (modelId: string, sessionID: string) => ({
+        sessionID,
+        agent: 'build',
+        model: { providerID: 'google', id: modelId },
+        kind: 'chat',
+        request: new Request(
+          `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:streamGenerateContent?alt=sse`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+            }),
+          },
+        ),
+      })
+
+      // Request 1 uses account 0 for free Flash -> backfills free-tier
+      const flashEvent = makeEvent('gemini-3.8-flash', 'tier-session-1')
+      await httpRequestHook!(flashEvent as never)
+      const flashResponse = await fetch(flashEvent.request)
+      expect(flashResponse.status).toBe(200)
+
+      // Next request wants Opus: account 0 is now known free-tier, while
+      // account 1 is unknown/eligible so account 1 gets selected and backfills g1-pro-tier!
+      const opusEvent = makeEvent('claude-opus-4-6-thinking', 'tier-session-2')
+      await httpRequestHook!(opusEvent as never)
+      const opusResponse = await fetch(opusEvent.request)
+      expect(opusResponse.status).toBe(200)
+      expect(usedTokens).toEqual(['access-free', 'access-pro'])
+    } finally {
+      if (cleanup) await cleanup()
+    }
+
+    const persisted = JSON.parse(readFileSync(accountsPath, 'utf8'))
+    expect(persisted.accounts[0].capturedTierId).toBe('free-tier')
+    expect(persisted.accounts[0].capturedTierSchemaVersion).toBe(1)
+    expect(persisted.accounts[1].capturedTierId).toBe('free-tier')
+    expect(persisted.accounts[1].capturedPaidTierId).toBe('g1-pro-tier')
+    expect(persisted.accounts[1].capturedTierSchemaVersion).toBe(1)
+  })
+
+  test('marks MODEL_CAPACITY_EXHAUSTED when daily 503 capacity fallback fails on cloudcode-pa prod and persists cooldown', async () => {
+    const configDir = process.env.OPENCODE_CONFIG_DIR
+    if (!configDir) throw new Error('OPENCODE_CONFIG_DIR is not set')
+    mkdirSync(configDir, { recursive: true })
+    const accountsPath = join(configDir, 'antigravity-accounts.json')
+    writeFileSync(
+      accountsPath,
+      JSON.stringify({
+        version: 4,
+        accounts: [
+          {
+            email: 'one@example.com',
+            refreshToken: 'refresh-one',
+            projectId: 'proj-one',
+            accessToken: 'access-one',
+            expiresAt: Date.now() + 3_600_000,
+            addedAt: 1,
+            lastUsed: 2,
+          },
+          {
+            email: 'two@example.com',
+            refreshToken: 'refresh-two',
+            projectId: 'proj-two',
+            accessToken: 'access-two',
+            expiresAt: Date.now() + 3_600_000,
+            addedAt: 2,
+            lastUsed: 1,
+          },
+        ],
+        activeIndex: 0,
+        activeIndexByFamily: { claude: 0, gemini: 0 },
+      }),
+    )
+
+    const attempts: Array<{ token: string; endpoint: string }> = []
+    let httpRequestHook:
+      | ((event: SessionHttpRequest) => Promise<void>)
+      | undefined
+    const registration = { dispose: async () => undefined }
+    const adapter = createOpenCodeV2AntigravityPlugin({
+      refreshAntigravityToken: async (refresh) => ({
+        refresh,
+        access: refresh.replace('refresh-', 'access-'),
+        expires: Date.now() + 3_600_000,
+      }),
+      ensureProjectContext: async (auth) => ({
+        auth,
+        effectiveProjectId: 'proj',
+      }),
+      send: async ({ auth, endpoint }) => {
+        attempts.push({ token: auth.access ?? '', endpoint })
+        if (auth.access === 'access-one') {
+          if (endpoint === 'https://daily-cloudcode-pa.googleapis.com') {
+            return new Response(
+              JSON.stringify({
+                error: {
+                  message: 'No capacity available on daily',
+                  details: [{ reason: 'MODEL_CAPACITY_EXHAUSTED' }],
+                },
+              }),
+              { status: 503 },
+            )
+          }
+          // Non-owning prod endpoint returns 429 or 503: owning 503 MUST still cool account 0!
+          return new Response(
+            JSON.stringify({
+              error: { message: 'Resource exhausted on prod' },
+            }),
+            { status: 429 },
+          )
+        }
+        return successResponse()
+      },
+    })
+
+    const cleanup = await adapter.setup({
+      session: {
+        hook: async (name: string, callback: unknown) => {
+          if (name === 'http.request') {
+            httpRequestHook = callback as (
+              event: SessionHttpRequest,
+            ) => Promise<void>
+          }
+          return registration
+        },
+      },
+      integration: { transform: async () => registration },
+    } as never)
+
+    try {
+      const event = {
+        sessionID: 'capacity-mark-session',
+        agent: 'build',
+        model: {
+          providerID: 'google',
+          id: 'gemini-3.8-flash',
+          variant: 'medium',
+        },
+        kind: 'chat',
+        request: new Request(
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse',
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+            }),
+          },
+        ),
+      }
+      await httpRequestHook!(event as never)
+      const response = await fetch(event.request)
+      expect(response.status).toBe(200)
+      expect(attempts).toEqual([
+        {
+          token: 'access-one',
+          endpoint: 'https://daily-cloudcode-pa.googleapis.com',
+        },
+        {
+          token: 'access-one',
+          endpoint: 'https://cloudcode-pa.googleapis.com',
+        },
+        {
+          token: 'access-two',
+          endpoint: 'https://daily-cloudcode-pa.googleapis.com',
+        },
+      ])
+    } finally {
+      if (cleanup) await cleanup()
+    }
+
+    const persisted = JSON.parse(readFileSync(accountsPath, 'utf8'))
+    const rateLimits = persisted.accounts[0].rateLimitResetTimes ?? {}
+    expect(Object.keys(rateLimits).length).toBeGreaterThan(0)
+  })
+
+  test('skips cloudcode-pa prod fallback on 503 capacity failure for Antigravity-only models like Claude Opus and Argon', async () => {
+    const configDir = process.env.OPENCODE_CONFIG_DIR
+    if (!configDir) throw new Error('OPENCODE_CONFIG_DIR is not set')
+    mkdirSync(configDir, { recursive: true })
+    const accountsPath = join(configDir, 'antigravity-accounts.json')
+    writeFileSync(
+      accountsPath,
+      JSON.stringify({
+        version: 4,
+        accounts: [
+          {
+            email: 'one@example.com',
+            refreshToken: 'refresh-one',
+            projectId: 'proj-one',
+            capturedTierId: 'pro-tier',
+            accessToken: 'access-one',
+            expiresAt: Date.now() + 3_600_000,
+            addedAt: 1,
+            lastUsed: 2,
+          },
+          {
+            email: 'two@example.com',
+            refreshToken: 'refresh-two',
+            projectId: 'proj-two',
+            capturedTierId: 'pro-tier',
+            accessToken: 'access-two',
+            expiresAt: Date.now() + 3_600_000,
+            addedAt: 2,
+            lastUsed: 1,
+          },
+        ],
+        activeIndex: 0,
+        activeIndexByFamily: { claude: 0, gemini: 0 },
+      }),
+    )
+
+    const attempts: Array<{ token: string; endpoint: string }> = []
+    let httpRequestHook:
+      | ((event: SessionHttpRequest) => Promise<void>)
+      | undefined
+    const registration = { dispose: async () => undefined }
+    const adapter = createOpenCodeV2AntigravityPlugin({
+      refreshAntigravityToken: async (refresh) => ({
+        refresh,
+        access: refresh.replace('refresh-', 'access-'),
+        expires: Date.now() + 3_600_000,
+      }),
+      ensureProjectContext: async (auth) => ({
+        auth,
+        effectiveProjectId: 'proj',
+      }),
+      send: async ({ auth, endpoint }) => {
+        attempts.push({ token: auth.access ?? '', endpoint })
+        if (auth.access === 'access-one') {
+          return new Response(
+            JSON.stringify({
+              error: {
+                message: 'Model capacity exhausted',
+                details: [{ reason: 'MODEL_CAPACITY_EXHAUSTED' }],
+              },
+            }),
+            { status: 503 },
+          )
+        }
+        return successResponse()
+      },
+    })
+
+    const cleanup = await adapter.setup({
+      session: {
+        hook: async (name: string, callback: unknown) => {
+          if (name === 'http.request') {
+            httpRequestHook = callback as (
+              event: SessionHttpRequest,
+            ) => Promise<void>
+          }
+          return registration
+        },
+      },
+      integration: { transform: async () => registration },
+    } as never)
+
+    try {
+      const event = {
+        sessionID: 'agy-only-503-session',
+        agent: 'build',
+        model: {
+          providerID: 'google',
+          id: 'gemini-4-argon',
+          variant: 'high',
+        },
+        kind: 'chat',
+        request: new Request(
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-4-argon:streamGenerateContent?alt=sse',
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+            }),
+          },
+        ),
+      }
+      await httpRequestHook!(event as never)
+      const response = await fetch(event.request)
+      expect(response.status).toBe(200)
+      expect(attempts).toEqual([
+        {
+          token: 'access-one',
+          endpoint: 'https://daily-cloudcode-pa.googleapis.com',
+        },
+        {
+          token: 'access-two',
+          endpoint: 'https://daily-cloudcode-pa.googleapis.com',
+        },
+      ])
+    } finally {
+      if (cleanup) await cleanup()
+    }
+  })
+
+  test('persists capturedTier via upsertOAuthAccount, refreshes stale tier (>24h), and preserves 503 prod fallback for gemini-3.8-flash', async () => {
+    const seeded = upsertOAuthAccount(
+      {
+        version: 4,
+        accounts: [],
+        activeIndex: 0,
+        activeIndexByFamily: { claude: 0, gemini: 0 },
+      },
+      {
+        type: 'success',
+        refresh: 'refresh-stale|proj-1',
+        access: 'access-stale',
+        expires: 999_999,
+        email: 'user@example.com',
+        projectId: 'proj-1',
+      },
+      100,
+      { id: 'free-tier', paidId: 'plus-tier', capturedAt: 100 },
+    )
+    expect(seeded.accounts[0]?.capturedTierId).toBe('free-tier')
+    expect(seeded.accounts[0]?.capturedPaidTierId).toBe('plus-tier')
+    expect(seeded.accounts[0]?.capturedTierAt).toBe(100)
+
+    const configDir = process.env.OPENCODE_CONFIG_DIR
+    if (!configDir) throw new Error('OPENCODE_CONFIG_DIR is not set')
+    mkdirSync(configDir, { recursive: true })
+    const accountsPath = join(configDir, 'antigravity-accounts.json')
+    writeFileSync(
+      accountsPath,
+      `${JSON.stringify({
+        version: 4,
+        accounts: [
+          {
+            refreshToken: 'refresh-stale',
+            email: 'user@example.com',
+            projectId: 'proj-1',
+            managedProjectId: 'proj-1',
+            capturedTierId: 'free-tier',
+            capturedPaidTierId: 'free-tier',
+            capturedTierAt: 1,
+            capturedTierSchemaVersion: 1,
+            addedAt: 1,
+            lastUsed: 0,
+            enabled: true,
+            rateLimitResetTimes: {},
+          },
+        ],
+        activeIndex: 0,
+        activeIndexByFamily: { claude: 0, gemini: 0 },
+      })}\n`,
+    )
+
+    let httpRequestHook:
+      | ((event: SessionHttpRequest) => Promise<void>)
+      | undefined
+    const endpoints: string[] = []
+    let loadCalls = 0
+    const registration = { dispose: async () => undefined }
+    const adapter = createOpenCodeV2AntigravityPlugin({
+      refreshAntigravityToken: async (refresh) => ({
+        refresh,
+        access: 'access-stale',
+        expires: Date.now() + 3_600_000,
+      }),
+      ensureProjectContext: async (auth) => ({
+        auth,
+        effectiveProjectId: 'proj-1',
+      }),
+      loadManagedProject: async () => {
+        loadCalls += 1
+        return {
+          currentTier: { id: 'free-tier' },
+          paidTier: { id: 'g1-pro-tier' },
+        }
+      },
+      send: async ({ endpoint }) => {
+        endpoints.push(endpoint)
+        if (endpoint === 'https://daily-cloudcode-pa.googleapis.com') {
+          return new Response(
+            JSON.stringify({
+              error: { message: 'Temporary capacity limit on daily' },
+            }),
+            { status: 503 },
+          )
+        }
+        return successResponse()
+      },
+    })
+
+    const cleanup = await adapter.setup({
+      session: {
+        hook: async (name: string, callback: unknown) => {
+          if (name === 'http.request') {
+            httpRequestHook = callback as (
+              event: SessionHttpRequest,
+            ) => Promise<void>
+          }
+          return registration
+        },
+      },
+      integration: { transform: async () => registration },
+    } as never)
+
+    try {
+      const event = {
+        sessionID: 'stale-tier-and-flash-fallback',
+        agent: 'build',
+        model: {
+          providerID: 'google',
+          id: 'gemini-3.8-flash',
+          variant: 'medium',
+        },
+        kind: 'chat',
+        request: new Request(
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse',
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+            }),
+          },
+        ),
+      }
+      await httpRequestHook!(event as never)
+      const response = await fetch(event.request)
+      expect(response.status).toBe(200)
+      expect(loadCalls).toBe(1)
+      expect(endpoints).toEqual([
+        'https://daily-cloudcode-pa.googleapis.com',
+        'https://cloudcode-pa.googleapis.com',
+      ])
+    } finally {
+      if (cleanup) await cleanup()
+    }
+
+    const persisted = JSON.parse(readFileSync(accountsPath, 'utf8'))
+    expect(persisted.accounts[0].capturedPaidTierId).toBe('g1-pro-tier')
+    expect(persisted.accounts[0].capturedTierAt).toBeGreaterThan(1)
   })
 })

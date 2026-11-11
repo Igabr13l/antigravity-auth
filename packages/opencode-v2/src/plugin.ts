@@ -34,11 +34,15 @@ import {
   defaultAccountStorageStore,
   ensureProjectContext,
   exchangeAntigravity,
+  extractCapturedTierFromPayload,
   fetchWithAgyCliTransport,
   formatRefreshParts,
   getModelFamily,
+  isAccountEligibleForModel,
+  isAntigravityOnlyModel,
   isImageGenerationModel,
   loadAccountStorage,
+  loadManagedProject,
   type ManagedAccount,
   mutateAccountStorage,
   normalizeGeminiTools,
@@ -48,6 +52,7 @@ import {
   parseRateLimitReason,
   parseRefreshParts,
   refreshAntigravityToken,
+  resolveAccountPlanTier,
   resolveModelForHeaderStyle,
   SKIP_THOUGHT_SIGNATURE,
   sanitizeCrossModelPayloadInPlace,
@@ -136,10 +141,13 @@ interface SendInput {
   kind: SessionRequestKind
 }
 
+const TIER_CAPTURE_TTL_MS = 24 * 60 * 60 * 1000
+
 interface OpenCodeV2Dependencies {
   authorizeAntigravity: typeof authorizeAntigravity
   ensureProjectContext: typeof ensureProjectContext
   exchangeAntigravity: typeof exchangeAntigravity
+  loadManagedProject: typeof loadManagedProject
   mutateAccountStorage: typeof mutateAccountStorage
   refreshAntigravityToken: typeof refreshAntigravityToken
   waitForAntigravityCode: typeof waitForAntigravityCode
@@ -154,6 +162,7 @@ export function upsertOAuthAccount(
   current: AccountStorageV4,
   result: OAuthSuccess,
   now: number,
+  capturedTier?: ReturnType<typeof extractCapturedTierFromPayload>,
 ): AccountStorageV4 {
   const refreshParts = parseRefreshParts(result.refresh)
   if (!refreshParts.refreshToken) {
@@ -185,6 +194,16 @@ export function upsertOAuthAccount(
     verificationRequiredAt: undefined,
     verificationRequiredReason: undefined,
     eligibilityStateUpdatedAt: now,
+    ...(capturedTier
+      ? {
+          capturedTierId: capturedTier.id,
+          ...(capturedTier.paidId
+            ? { capturedPaidTierId: capturedTier.paidId }
+            : {}),
+          capturedTierAt: capturedTier.capturedAt,
+          capturedTierSchemaVersion: 1,
+        }
+      : {}),
   }
   const accounts = [...current.accounts]
   if (existingIndex >= 0) accounts[existingIndex] = account
@@ -737,6 +756,13 @@ export function createOpenCodeV2AntigravityPlugin(
     ensureProjectContext:
       overrides.ensureProjectContext ?? ensureProjectContext,
     exchangeAntigravity: overrides.exchangeAntigravity ?? exchangeAntigravity,
+    loadManagedProject:
+      overrides.loadManagedProject ??
+      (overrides.ensureProjectContext ||
+      overrides.exchangeAntigravity ||
+      overrides.authorizeAntigravity
+        ? async () => null
+        : loadManagedProject),
     mutateAccountStorage:
       overrides.mutateAccountStorage ?? mutateAccountStorage,
     refreshAntigravityToken:
@@ -755,6 +781,7 @@ export function createOpenCodeV2AntigravityPlugin(
       const jobTimers = new Map<string, NodeJS.Timeout>()
       const lastModelBySession = new Map<string, string>()
       const activeControllers = new Set<AbortController>()
+      const tierRefreshInflight = new Map<string, Promise<void>>()
       const registrations: Registration[] = []
 
       let accounts = await loadAccountStorage(ACCOUNTS_FILE).catch((error) => {
@@ -865,6 +892,67 @@ export function createOpenCodeV2AntigravityPlugin(
         lastModelBySession.set(sessionKey, model)
       }
 
+      function syncAccountCapturedTier(
+        target: ManagedAccount,
+        capturedTier: NonNullable<
+          ReturnType<typeof extractCapturedTierFromPayload>
+        >,
+      ): void {
+        manager.applyUpdatedAccount(
+          target.index,
+          {
+            capturedTierId: capturedTier.id,
+            ...(capturedTier.paidId
+              ? { capturedPaidTierId: capturedTier.paidId }
+              : {}),
+            capturedTierAt: capturedTier.capturedAt,
+            capturedTierSchemaVersion: 1,
+          },
+          target.parts.refreshToken,
+        )
+        manager.requestSaveToDisk()
+      }
+
+      function needsTierCapture(target: ManagedAccount, now: number): boolean {
+        return (
+          !target.capturedTierId ||
+          target.capturedTierSchemaVersion !== 1 ||
+          !target.capturedTierAt ||
+          now - target.capturedTierAt > TIER_CAPTURE_TTL_MS
+        )
+      }
+
+      async function refreshAccountTier(
+        target: ManagedAccount,
+        accessToken: string,
+      ): Promise<void> {
+        const key = target.parts.refreshToken
+        const existing = tierRefreshInflight.get(key)
+        if (existing) {
+          await existing
+          return
+        }
+        const task = (async () => {
+          try {
+            const payload = await dependencies.loadManagedProject(
+              accessToken,
+              target.parts.managedProjectId ?? target.parts.projectId,
+            )
+            const captured = extractCapturedTierFromPayload(payload)
+            if (captured) {
+              syncAccountCapturedTier(target, captured)
+              log('tier-captured', `#${target.index}`, captured.id)
+            }
+          } catch (error) {
+            log('tier-capture-error', `#${target.index}`, errorMessage(error))
+          } finally {
+            tierRefreshInflight.delete(key)
+          }
+        })()
+        tierRefreshInflight.set(key, task)
+        await task
+      }
+
       async function pickResponse(
         job: PendingJob,
         signal?: AbortSignal,
@@ -910,6 +998,35 @@ export function createOpenCodeV2AntigravityPlugin(
             continue
           }
 
+          if (context.capturedTier) {
+            syncAccountCapturedTier(account, context.capturedTier)
+          } else if (auth.access && needsTierCapture(account, Date.now())) {
+            if (
+              !account.capturedTierId ||
+              account.capturedTierSchemaVersion !== 1
+            ) {
+              await refreshAccountTier(account, auth.access)
+            } else {
+              void refreshAccountTier(account, auth.access)
+            }
+          }
+
+          if (!isAccountEligibleForModel(account, requested)) {
+            const hasKnownEligiblePeer = manager
+              .getEnabledAccounts()
+              .some(
+                (peer) =>
+                  peer.index !== account.index &&
+                  !excluded.has(peer.index) &&
+                  resolveAccountPlanTier(peer) !== 'unknown' &&
+                  isAccountEligibleForModel(peer, requested),
+              )
+            if (hasKnownEligiblePeer) {
+              excluded.add(account.index)
+              continue
+            }
+          }
+
           const sessionKey = requestSessionKey(job)
           const scope = requestSessions.beginRequest(sessionKey)
           const envelope = buildEnvelope(
@@ -927,6 +1044,9 @@ export function createOpenCodeV2AntigravityPlugin(
           // endpoint still answers 401 afterwards the account is excluded and the
           // pool selection continues instead of refreshing in an unbounded loop.
           let forcedRefresh = false
+          let hasOwningCapacityFailure = false
+          let owningCapacityRetryDelayMs: number | undefined
+          let accountMarkedRateLimited = false
           for (
             let endpointIndex = 0;
             endpointIndex < ANTIGRAVITY_ENDPOINT_FALLBACKS.length;
@@ -1008,18 +1128,39 @@ export function createOpenCodeV2AntigravityPlugin(
               failure = new Error(
                 `Antigravity capacity failure ${response.status}${message ? `: ${message}` : ''}`,
               )
-              if (endpointIndex < ANTIGRAVITY_ENDPOINT_FALLBACKS.length - 1)
-                continue
               if (endpointOwnsAccountQuota(endpoint)) {
+                hasOwningCapacityFailure = true
+                if (retryDelayMs !== undefined) {
+                  owningCapacityRetryDelayMs = retryDelayMs
+                }
+              }
+              const nextEndpoint =
+                ANTIGRAVITY_ENDPOINT_FALLBACKS[endpointIndex + 1]
+              const skipNextProdFallback =
+                nextEndpoint === ANTIGRAVITY_ENDPOINT_PROD &&
+                (isAntigravityOnlyModel(requested) ||
+                  isAntigravityOnlyModel(job.modelID))
+              if (
+                endpointIndex < ANTIGRAVITY_ENDPOINT_FALLBACKS.length - 1 &&
+                !skipNextProdFallback
+              ) {
+                continue
+              }
+              if (
+                endpointOwnsAccountQuota(endpoint) ||
+                hasOwningCapacityFailure
+              ) {
                 manager.markRateLimitedWithReason(
                   account,
                   family,
                   'antigravity',
                   requested,
                   'MODEL_CAPACITY_EXHAUSTED',
-                  retryDelayMs ?? 45_000,
+                  retryDelayMs ?? owningCapacityRetryDelayMs ?? 45_000,
                   3_600_000,
                 )
+                manager.requestSaveToDisk()
+                accountMarkedRateLimited = true
               }
               excluded.add(account.index)
               break
@@ -1042,6 +1183,20 @@ export function createOpenCodeV2AntigravityPlugin(
                     60_000,
                   3_600_000,
                 )
+                manager.requestSaveToDisk()
+                accountMarkedRateLimited = true
+              } else if (hasOwningCapacityFailure) {
+                manager.markRateLimitedWithReason(
+                  account,
+                  family,
+                  'antigravity',
+                  requested,
+                  'MODEL_CAPACITY_EXHAUSTED',
+                  owningCapacityRetryDelayMs ?? 45_000,
+                  3_600_000,
+                )
+                manager.requestSaveToDisk()
+                accountMarkedRateLimited = true
               }
               excluded.add(account.index)
               failure = new Error(
@@ -1062,12 +1217,25 @@ export function createOpenCodeV2AntigravityPlugin(
             excluded.add(account.index)
             break
           }
+          if (!accountMarkedRateLimited && hasOwningCapacityFailure) {
+            manager.markRateLimitedWithReason(
+              account,
+              family,
+              'antigravity',
+              requested,
+              'MODEL_CAPACITY_EXHAUSTED',
+              owningCapacityRetryDelayMs ?? 45_000,
+              3_600_000,
+            )
+            manager.requestSaveToDisk()
+          }
           // Transport failures may exhaust every endpoint without producing an
           // HTTP response. Move to another account instead of selecting the same
           // account again in the outer loop.
           excluded.add(account.index)
         }
 
+        await manager.flushSaveToDisk().catch(() => undefined)
         throw (
           failure ??
           new Error(
@@ -1483,10 +1651,21 @@ export function createOpenCodeV2AntigravityPlugin(
                     'Antigravity token exchange returned no refresh token',
                   )
                 }
+                const capturedTier = extractCapturedTierFromPayload(
+                  await dependencies
+                    .loadManagedProject(
+                      result.access,
+                      refreshParts.managedProjectId ??
+                        refreshParts.projectId ??
+                        result.projectId,
+                    )
+                    .catch(() => null),
+                )
                 await manager.flushSaveToDisk()
                 await dependencies.mutateAccountStorage(
                   ACCOUNTS_FILE,
-                  (current) => upsertOAuthAccount(current, result, now),
+                  (current) =>
+                    upsertOAuthAccount(current, result, now, capturedTier),
                 )
                 await reloadPool({ flushCurrent: false })
                 log('account-added', 'pool', manager.getTotalAccountCount())

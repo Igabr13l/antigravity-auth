@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { AccountManager } from './account-manager.ts'
+import { AccountManager, resolveQuotaGroup } from './account-manager.ts'
 import type { AccountStorageStore } from './account-storage.ts'
 import type { AccountStorageV4 } from './account-types.ts'
 
@@ -643,5 +643,108 @@ describe('managedProjectId projection', () => {
       'antigravity',
     )
     expect(selected?.index).toBe(1)
+  })
+
+  it('resolves gemini-4-argon models to the argon quota group', () => {
+    expect(resolveQuotaGroup('gemini', 'gemini-4-argon-high')).toBe('argon')
+    expect(resolveQuotaGroup('gemini', 'antigravity-gemini-4-argon')).toBe(
+      'argon',
+    )
+    expect(resolveQuotaGroup('gemini', 'gemini-3.8-flash-high')).toBe('gemini')
+    expect(resolveQuotaGroup('claude', 'claude-sonnet-4-6')).toBe('non-gemini')
+  })
+
+  it('proactivelyRotateForFamily enforces plan eligibility and isolates argon soft quota', () => {
+    const stored: AccountStorageV4 = {
+      version: 4,
+      accounts: [
+        {
+          refreshToken: 'r-pro-low',
+          capturedTierId: 'free-tier',
+          capturedPaidTierId: 'g1-pro-tier',
+          addedAt: 100,
+          lastUsed: 100,
+          cachedQuota: {
+            'non-gemini': { remainingFraction: 0.05 },
+            argon: { remainingFraction: 0.9 },
+            gemini: { remainingFraction: 0.1 },
+          },
+          cachedQuotaUpdatedAt: 900,
+        },
+        {
+          refreshToken: 'r-free',
+          capturedTierId: 'free-tier',
+          addedAt: 200,
+          lastUsed: 200,
+          cachedQuota: {
+            'non-gemini': { remainingFraction: 1.0 },
+            argon: { remainingFraction: 1.0 },
+            gemini: { remainingFraction: 1.0 },
+          },
+          cachedQuotaUpdatedAt: 900,
+        },
+        {
+          refreshToken: 'r-ultra',
+          capturedTierId: 'free-tier',
+          capturedPaidTierId: 'g1-ultra-tier',
+          addedAt: 300,
+          lastUsed: 300,
+          cachedQuota: {
+            'non-gemini': { remainingFraction: 0.8 },
+            argon: { remainingFraction: 0.7 },
+            gemini: { remainingFraction: 0.9 },
+          },
+          cachedQuotaUpdatedAt: 900,
+        },
+      ],
+      activeIndex: 0,
+      activeIndexByFamily: { claude: 0, gemini: 0 },
+    }
+    const memory = createStore(stored)
+    const manager = new AccountManager(undefined, stored, {
+      store: memory.store,
+      now: () => 1_000,
+    })
+
+    // Proactive rotation for Opus must skip account 1 (free) and pick account 2 (ultra)
+    const opusRotated = manager.proactivelyRotateForFamily(
+      'claude',
+      'claude-opus-4-6-thinking',
+      'antigravity',
+      80,
+      60_000,
+    )
+    expect(opusRotated?.index).toBe(2)
+
+    // For Argon, account 0 has 90% remaining argon quota (despite low gemini quota 10%),
+    // so proactive threshold at 80% used (remaining <= 20%) must NOT fire unnecessarily.
+    expect(
+      manager.shouldProactivelyRotate(
+        'gemini',
+        'gemini-4-argon-high',
+        80,
+        60_000,
+      ),
+    ).toBe(false)
+
+    // When only free non-eligible accounts remain for Opus and current is pro, do not rotate to free.
+    const twoAccountStorage: AccountStorageV4 = {
+      version: 4,
+      accounts: stored.accounts.slice(0, 2),
+      activeIndex: 0,
+      activeIndexByFamily: { claude: 0, gemini: 0 },
+    }
+    const twoManager = new AccountManager(undefined, twoAccountStorage, {
+      store: createStore(twoAccountStorage).store,
+      now: () => 1_000,
+    })
+    const stayedOnPro = twoManager.proactivelyRotateForFamily(
+      'claude',
+      'claude-opus-4-6-thinking',
+      'antigravity',
+      80,
+      60_000,
+    )
+    expect(stayedOnPro).toBeNull()
   })
 })

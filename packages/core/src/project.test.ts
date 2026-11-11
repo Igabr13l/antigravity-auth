@@ -12,6 +12,7 @@ import { ANTIGRAVITY_ENDPOINT_PROD } from './constants.ts'
 import {
   clearProvisionFailedKeys,
   ensureProjectContext,
+  extractCapturedTierFromPayload,
   invalidateProjectContextCache,
   loadManagedProject,
   onboardManagedProject,
@@ -197,5 +198,30 @@ describe('project bootstrap', () => {
 
     expect(first.effectiveProjectId).toBe(second.effectiveProjectId)
     expect(fetchSpy.mock.calls.length).toBe(callsAfterFirstResolve)
+  })
+
+  it('extractCapturedTierFromPayload falls back to paidTier.id when currentTier is omitted', () => {
+    expect(
+      extractCapturedTierFromPayload({ paidTier: { id: 'g1-pro-tier' } }, 5000),
+    ).toEqual({
+      id: 'g1-pro-tier',
+      paidId: 'g1-pro-tier',
+      capturedAt: 5000,
+    })
+    expect(
+      extractCapturedTierFromPayload(
+        {
+          currentTier: { id: 'free-tier' },
+          paidTier: { id: 'g1-ultra-tier' },
+        },
+        6000,
+      ),
+    ).toEqual({
+      id: 'free-tier',
+      paidId: 'g1-ultra-tier',
+      capturedAt: 6000,
+    })
+    expect(extractCapturedTierFromPayload(null, 7000)).toBeUndefined()
+    expect(extractCapturedTierFromPayload({}, 7000)).toBeUndefined()
   })
 })

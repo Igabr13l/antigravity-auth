@@ -9,7 +9,7 @@
 
 import type { AccountMetadataV3 } from './account-types.ts'
 
-export type QuotaGroup = 'gemini' | 'non-gemini'
+export type QuotaGroup = 'gemini' | 'argon' | 'non-gemini'
 
 export type QuotaWindow = 'weekly' | '5h'
 
@@ -74,6 +74,7 @@ export function normalizeLegacyCachedQuota(
     }
   }
 
+  const argon = raw.argon as QuotaGroupSummary | undefined
   const gemini = minFraction(
     raw.gemini as QuotaGroupSummary | undefined,
     minFraction(
@@ -91,6 +92,7 @@ export function normalizeLegacyCachedQuota(
 
   return {
     ...(gemini !== undefined ? { gemini } : {}),
+    ...(argon !== undefined ? { argon } : {}),
     ...(nonGemini !== undefined ? { 'non-gemini': nonGemini } : {}),
   }
 }

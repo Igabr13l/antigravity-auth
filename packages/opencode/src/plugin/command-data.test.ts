@@ -57,6 +57,7 @@ import {
 
 interface QuotaGroupFixture {
   gemini?: { remainingFraction?: number; resetTime?: string }
+  argon?: { remainingFraction?: number; resetTime?: string }
   'non-gemini'?: { remainingFraction?: number; resetTime?: string }
 }
 
@@ -1684,6 +1685,51 @@ describe('P2-B: writeSidebar lands tier in the state FILE', () => {
 
     expect(state.accounts).toHaveLength(1)
     expect(state.accounts[0]?.tier).toBeUndefined()
+  })
+
+  it('projects separate argon quota row and persists it to sidebar state', async () => {
+    const harness = makeHarness({
+      accounts: [
+        makeAccountFixture({
+          refreshToken: 'refresh-argon',
+          cachedQuota: {
+            gemini: { remainingFraction: 0.9 },
+            argon: { remainingFraction: 0.25 },
+            'non-gemini': { remainingFraction: 0.6 },
+          },
+          cachedQuotaAccountId: quotaAccountIdentity('refresh-argon'),
+        }),
+      ],
+      refreshResults: new Map([
+        [
+          'refresh-argon',
+          {
+            index: 0,
+            status: 'ok' as const,
+            quota: {
+              groups: {
+                gemini: { remainingFraction: 0.9, modelCount: 1 },
+                argon: { remainingFraction: 0.25, modelCount: 1 },
+                'non-gemini': { remainingFraction: 0.6, modelCount: 1 },
+              },
+              modelCount: 3,
+            },
+          },
+        ],
+      ]),
+    })
+
+    const rows = await harness.service.refreshQuota()
+    expect(
+      rows[0]?.quota.map((q) => [q.key, q.label, q.remainingPercent]),
+    ).toEqual([
+      ['gemini', 'Gemini', 90],
+      ['argon', 'Argon', 25],
+      ['non-gemini', 'Non-Gemini', 60],
+    ])
+
+    const state = await readSidebar(harness.stateFile)
+    expect(state.accounts[0]?.quota.argon?.remainingPercent).toBe(25)
   })
 })
 

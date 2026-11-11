@@ -19,7 +19,7 @@ import {
 
 /** Per-family quota aggregates for one account (gemini + claude/gpt-oss). */
 export type QuotaGroups = Partial<
-  Record<'gemini' | 'non-gemini', QuotaGroupSummary>
+  Record<'gemini' | 'argon' | 'non-gemini', QuotaGroupSummary>
 >
 
 export type AccountState =
@@ -413,6 +413,7 @@ export function formatQuotaParts(
   const parts: string[] = []
   for (const [family, label] of [
     ['gemini', 'Gemini'],
+    ['argon', 'Argon'],
     ['non-gemini', 'Non-Gemini'],
   ] as const) {
     const group = quota[family]
@@ -540,7 +541,7 @@ export function accountStateColor(
   }
 }
 
-type QuotaFamily = 'gemini' | 'non-gemini'
+type QuotaFamily = 'gemini' | 'argon' | 'non-gemini'
 
 /** Cooldown keys that block the whole account rather than one quota family. */
 const ACCOUNT_WIDE_COOLDOWNS: ReadonlySet<string> = new Set([
@@ -556,7 +557,7 @@ function quotaBarFractions(
   account: AccountStatus,
 ): Partial<Record<QuotaFamily, number[]>> {
   const result: Partial<Record<QuotaFamily, number[]>> = {}
-  for (const family of ['gemini', 'non-gemini'] as const) {
+  for (const family of ['gemini', 'argon', 'non-gemini'] as const) {
     const group = account.quota?.[family]
     const windows = group?.windows
     if (windows && windows.length > 0) {
@@ -644,6 +645,7 @@ export function sidebarRows(
   const activeWithoutBars = (
     [
       ['gemini', 'G', activeFamilies.includes('gemini')],
+      ['argon', 'A', activeFamilies.includes('argon')],
       [
         'non-gemini',
         'C',
@@ -705,13 +707,16 @@ export function sidebarRows(
 
   for (const [family, familyLabel] of [
     ['gemini', 'G'],
+    ['argon', 'A'],
     ['non-gemini', 'C'],
   ] as const) {
     const isFamilyActive =
       family === 'gemini'
         ? activeFamilies.includes('gemini')
-        : activeFamilies.includes('claude') ||
-          activeFamilies.includes('non-gemini')
+        : family === 'argon'
+          ? activeFamilies.includes('argon')
+          : activeFamilies.includes('claude') ||
+            activeFamilies.includes('non-gemini')
 
     const activeMarker = isFamilyActive ? '▸' : ' '
 

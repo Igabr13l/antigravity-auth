@@ -66,16 +66,26 @@ error.
 ### Requirement: Group classification and aggregation
 
 `classifyQuotaGroup` SHALL consult the model registry first, then classify
-`claude`/`gpt-oss` substrings as `non-gemini` BEFORE `gemini` (so a
-`gemini-claude-*` alias lands in the non-gemini pool), then `gemini`, else
-`null`. `aggregateQuota` SHALL keep, per group, the minimum
+`claude`/`gpt-oss` substrings as `non-gemini` BEFORE `gemini`, then `argon`
+BEFORE `gemini` (so `gemini-4-argon*` lands in the dedicated `argon` pool while
+other `gemini-` models land in `gemini`), else `null`. `aggregateQuota` SHALL
+keep, per group (`gemini`, `argon`, `non-gemini`), the minimum
 `remainingFraction` and earliest `resetTime` across models, a sorted
 per-model list (fraction clamped 0–1, missing treated as 0), and the model
-count. `aggregateQuotaSummary` SHALL map bucket id prefixes `gemini-`→gemini
-and `3p-`→non-gemini (first RECOGNIZED bucket wins), sort a pool's windows
-shortest-first (`5h` before `weekly`), derive the pool's remaining fraction
-and reset from the most-constrained window, and count models from the
-group description after stripping a `Label:` prefix.
+count. `aggregateQuotaSummary` SHALL map `argon` bucket ids, `displayName`, or
+exclusive `argon` descriptions to `argon`, `gemini-` bucket ids to `gemini`, and
+`3p-` bucket ids to `non-gemini` (first RECOGNIZED bucket wins), sort a pool's
+windows shortest-first (`5h` before `weekly`), derive the pool's remaining
+fraction and reset from the most-constrained window, and count models from the
+group description after stripping a `Label:` prefix. `normalizeLegacyCachedQuota`
+SHALL preserve `gemini`, `argon`, and `non-gemini` entries.
+
+#### Scenario: Gemini 4 Argon lands in its own quota pool
+
+- **WHEN** `classifyQuotaGroup('gemini-4-argon')` or `aggregateQuotaSummary`
+  processes an `argon` bucket/group alongside standard Gemini models
+- **THEN** Argon is classified and aggregated under `argon` separately from the
+  `gemini` pool
 
 #### Scenario: Pool derived from most-constrained window
 

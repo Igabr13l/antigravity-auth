@@ -35,7 +35,7 @@ interface AntigravityUserTier {
   userDefinedCloudaicompanionProject?: boolean
 }
 
-interface LoadCodeAssistPayload {
+export interface LoadCodeAssistPayload {
   cloudaicompanionProject?: string | { id?: string }
   currentTier?: {
     id?: string
@@ -149,6 +149,29 @@ export function invalidateProjectContextCache(refresh?: string): void {
 
 export function clearProvisionFailedKeys(): void {
   provisionFailedKeys.clear()
+}
+
+/**
+ * Extracts normalized plan-tier metadata from a `loadCodeAssist` payload.
+ */
+export function extractCapturedTierFromPayload(
+  payload: LoadCodeAssistPayload | null | undefined,
+  now = Date.now(),
+): ProjectContextResult['capturedTier'] {
+  const capturedTierId = payload?.currentTier?.id
+  const paidTierId =
+    typeof payload?.paidTier === 'string'
+      ? payload.paidTier
+      : payload?.paidTier?.id
+  const primaryId = capturedTierId ?? paidTierId
+  if (!primaryId) {
+    return undefined
+  }
+  return {
+    id: primaryId,
+    ...(paidTierId ? { paidId: paidTierId } : {}),
+    capturedAt: now,
+  }
 }
 
 /**
@@ -325,18 +348,7 @@ export async function ensureProjectContext(
     )
     // Capture tier from the loadCodeAssist payload. The raw id is stored
     // as-is; absent payload or missing tier leaves capturedTier undefined.
-    const capturedTierId = loadPayload?.currentTier?.id
-    const paidTierId =
-      typeof loadPayload?.paidTier === 'string'
-        ? loadPayload.paidTier
-        : loadPayload?.paidTier?.id
-    const tierFromPayload: ProjectContextResult['capturedTier'] = capturedTierId
-      ? {
-          id: capturedTierId,
-          ...(paidTierId ? { paidId: paidTierId } : {}),
-          capturedAt: Date.now(),
-        }
-      : undefined
+    const tierFromPayload = extractCapturedTierFromPayload(loadPayload)
     const resolvedManagedProjectId = extractManagedProjectId(loadPayload)
 
     if (resolvedManagedProjectId) {

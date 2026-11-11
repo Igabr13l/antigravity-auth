@@ -60,7 +60,7 @@ const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000
 
 const QUOTA_GROUP_BY_FAMILY: Record<ModelFamily, readonly QuotaGroup[]> = {
   claude: ['non-gemini'],
-  gemini: ['gemini', 'non-gemini'],
+  gemini: ['gemini', 'argon', 'non-gemini'],
 }
 
 /**
@@ -82,6 +82,7 @@ function quotaGroupForModel(
     // a `gemini-claude-*` alias (Claude route exposed under a `gemini-`
     // namespace) attributes to the non-gemini pool rather than the
     // gemini pool.
+    if (lower.includes('argon')) return 'argon'
     if (lower.includes('claude') || lower.includes('gpt-oss')) {
       return 'non-gemini'
     }

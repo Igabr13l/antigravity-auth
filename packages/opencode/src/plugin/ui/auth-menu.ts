@@ -154,6 +154,7 @@ function getHealthLabel(acc: AccountInfo): string {
 
 const QUOTA_KEYS: { key: string; label: string }[] = [
   { key: 'gemini', label: 'Gemini' },
+  { key: 'argon', label: 'Argon' },
   { key: 'non-gemini', label: 'Non-Gemini' },
 ]
 

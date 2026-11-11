@@ -11,7 +11,9 @@ import {
   getGemini37FlashAntigravityModel,
   getGemini38FlashAntigravityModel,
   getPublicModelDefinitions,
+  getQuotaGroupForModel,
   getResolverAliasMap,
+  isAntigravityOnlyModel,
 } from './model-registry.ts'
 
 const REQUIRED_PUBLIC_MODEL_FIELDS = [
@@ -275,5 +277,29 @@ describe('model registry', () => {
     expect(getPublicModelDefinitions()).not.toHaveProperty(
       'antigravity-custom-test',
     )
+  })
+
+  it('classifies Gemini 4 Argon under its own argon quota group', () => {
+    expect(getQuotaGroupForModel('gemini-4-argon')).toBe('argon')
+    expect(getQuotaGroupForModel('gemini-4-argon-high')).toBe('argon')
+    expect(getQuotaGroupForModel('antigravity-gemini-4-argon')).toBe('argon')
+    expect(getQuotaGroupForModel('gemini-4-carbon')).toBe('gemini')
+    expect(getQuotaGroupForModel('gemini-3.8-flash')).toBe('gemini')
+    expect(getQuotaGroupForModel('claude-opus-4-6-thinking')).toBe('non-gemini')
+    expect(getQuotaGroupForModel('gpt-oss-120b-medium')).toBe('non-gemini')
+  })
+
+  it('identifies Antigravity-only models separately from Gemini CLI-capable models', () => {
+    expect(isAntigravityOnlyModel('claude-opus-4-6-thinking')).toBe(true)
+    expect(isAntigravityOnlyModel('claude-sonnet-4-6')).toBe(true)
+    expect(isAntigravityOnlyModel('gpt-oss-120b-medium')).toBe(true)
+    expect(isAntigravityOnlyModel('gemini-4-argon-high')).toBe(true)
+    expect(isAntigravityOnlyModel('gemini-4-carbon-low')).toBe(true)
+    expect(isAntigravityOnlyModel('gemini-3.1-flash-image')).toBe(true)
+    expect(isAntigravityOnlyModel('tab_flash_lite_preview')).toBe(true)
+
+    expect(isAntigravityOnlyModel('gemini-3.8-flash-medium')).toBe(false)
+    expect(isAntigravityOnlyModel('gemini-3.1-pro-low')).toBe(false)
+    expect(isAntigravityOnlyModel('gemini-2.5-flash')).toBe(false)
   })
 })

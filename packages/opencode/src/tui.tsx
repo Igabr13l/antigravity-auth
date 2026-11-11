@@ -133,10 +133,15 @@ const MAX_NOTIFICATION_CURSORS = 256
 
 const QUOTA_LABELS: Record<SidebarQuotaKey, string> = {
   gemini: 'Gm',
+  argon: 'Ag',
   'non-gemini': 'NG',
 }
 
-const QUOTA_ORDER: readonly SidebarQuotaKey[] = ['gemini', 'non-gemini']
+const QUOTA_ORDER: readonly SidebarQuotaKey[] = [
+  'gemini',
+  'argon',
+  'non-gemini',
+]
 
 const WINDOW_GUTTER: Record<string, string> = {
   weekly: '7d',
@@ -621,6 +626,7 @@ function AccountBlock(props: {
       <For each={QUOTA_ORDER}>
         {(key) => {
           const poolEntry = props.account.quota[key]
+          if (key === 'argon' && !poolEntry) return null
           const windows = poolEntry?.windows
           // Legacy: no windows array — render a single row with the pool label.
           const hasWindows = windows && windows.length > 0
@@ -876,14 +882,24 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
               q?.gemini != null
                 ? 100 - clamp(q.gemini.remainingPercent, 0, 100)
                 : null
+            const argonUsed =
+              q?.argon != null
+                ? 100 - clamp(q.argon.remainingPercent, 0, 100)
+                : null
             const nonGeminiUsed =
               q?.['non-gemini'] != null
                 ? 100 - clamp(q['non-gemini'].remainingPercent, 0, 100)
                 : null
-            if (geminiUsed === null && nonGeminiUsed === null) return null
-            return Math.max(geminiUsed ?? 0, nonGeminiUsed ?? 0)
+            if (
+              geminiUsed === null &&
+              argonUsed === null &&
+              nonGeminiUsed === null
+            ) {
+              return null
+            }
+            return Math.max(geminiUsed ?? 0, argonUsed ?? 0, nonGeminiUsed ?? 0)
           }
-          const poolText = (key: 'gemini' | 'non-gemini') => {
+          const poolText = (key: SidebarQuotaKey) => {
             const entry = account()?.quota[key]
             if (!entry) return `${QUOTA_LABELS[key]}: —`
             const pct = Math.round(100 - clamp(entry.remainingPercent, 0, 100))
@@ -926,9 +942,16 @@ export function SidebarPanel(props: SidebarPanelProps): JSX.Element {
                     >
                       <b>
                         {account()?.quota.gemini == null &&
+                        account()?.quota.argon == null &&
                         account()?.quota['non-gemini'] == null
                           ? '—'
-                          : `${poolText('gemini')} · ${poolText('non-gemini')}`}
+                          : [
+                              poolText('gemini'),
+                              ...(account()?.quota.argon != null
+                                ? [poolText('argon')]
+                                : []),
+                              poolText('non-gemini'),
+                            ].join(' · ')}
                       </b>
                     </text>
                     <text

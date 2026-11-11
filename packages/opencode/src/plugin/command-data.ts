@@ -83,7 +83,7 @@ type CommandDataAccountMetadata = {
   accountIneligible?: boolean
 }
 
-type CommandDataQuotaGroup = 'gemini' | 'non-gemini'
+type CommandDataQuotaGroup = 'gemini' | 'argon' | 'non-gemini'
 
 type CommandDataQuotaGroupSummary = {
   remainingFraction?: number
@@ -153,7 +153,7 @@ export interface CommandAccountRow {
   /** Health score in [0, 100], forwarded from the live tracker. */
   healthScore?: number
   quota: Array<{
-    key: 'gemini' | 'non-gemini'
+    key: 'gemini' | 'argon' | 'non-gemini'
     label: string
     remainingPercent: number | null
     resetAt?: number
@@ -180,11 +180,13 @@ const QUOTA_GROUP_LABELS: Record<
   string
 > = {
   gemini: 'Gemini',
+  argon: 'Argon',
   'non-gemini': 'Non-Gemini',
 }
 
 const SUPPORTED_QUOTA_KEYS = [
   'gemini',
+  'argon',
   'non-gemini',
 ] as const satisfies readonly CommandAccountRow['quota'][number]['key'][]
 
@@ -508,6 +510,7 @@ export function createCommandDataService(
     row: CommandAccountRow,
   ): SidebarAccountRedactionInput => {
     const gemini = row.quota.find((q) => q.key === 'gemini')
+    const argon = row.quota.find((q) => q.key === 'argon')
     const nonGemini = row.quota.find((q) => q.key === 'non-gemini')
     // Map a CommandAccountRow quota entry to cachedQuota pool shape
     // so projectQuotaPoolForSidebar (the canonical projection seam)
@@ -549,6 +552,7 @@ export function createCommandDataService(
       tier: row.tier,
       cachedQuota: {
         gemini: toPool(gemini),
+        ...(argon ? { argon: toPool(argon) } : {}),
         'non-gemini': toPool(nonGemini),
       },
     }

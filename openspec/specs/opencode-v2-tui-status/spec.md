@@ -60,7 +60,9 @@ rendered.
 ### Requirement: Per-account quota display
 
 The sidebar lines and the accounts dialog SHALL show, when quota data is
-available, each account's remaining usage per family (e.g. `Gemini 78%`,
+available, each account's remaining usage per family (`Gemini`, optional
+dedicated `Argon` when `argon` quota is present with bar label `A`, and
+`Non-Gemini` with bar label `C`, e.g. `Gemini 78%`, `Argon 90%`,
 `Non-Gemini LOW 15%`), collapse exhausted groups with a known reset into
 `exhausted (resets <duration>)`, hide fully saturated groups, and mark which
 account is currently active per family: with quota bars the family's first bar
@@ -80,6 +82,13 @@ written to the pool file.
 - **THEN** the next pool read (within one poll interval) renders the
   percentage on that account's sidebar line, and the account that the pool's
   active index points at is marked `active: <families>`
+
+#### Scenario: Dedicated Argon quota renders alongside Gemini and Non-Gemini
+
+- **WHEN** an account reports `quota.argon` in addition to `gemini` and `non-gemini`
+- **THEN** `formatQuotaParts` and `sidebarRows` render `Argon <pct>%` and an `A`
+  bar row (including the `▸` active marker when `argon` is active), while
+  accounts without `argon` omit the `Argon` / `A` row cleanly
 
 #### Scenario: Quota endpoint failing
 

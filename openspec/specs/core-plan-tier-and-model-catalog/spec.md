@@ -40,6 +40,12 @@ resolve to `free`. Any unrecognized or missing tier strings SHALL resolve to
 - **WHEN** an account has `capturedPaidTierId: "g1-ultra"` or `capturedTierId: "gemini-ultra-tier"`
 - **THEN** `resolveAccountPlanTier(account)` evaluates to `"ultra"`
 
+#### Scenario: Extracting tier when only paidTier is present in loadCodeAssist payload
+
+- **WHEN** `extractCapturedTierFromPayload` receives a payload without `currentTier.id`
+  but with `paidTier.id: "g1-pro-tier"`
+- **THEN** it returns `{ id: "g1-pro-tier", paidId: "g1-pro-tier", capturedAt }` so the paid plan tier is still captured
+
 ### Requirement: Plan tier ranking and comparison
 
 The core plan-tier module SHALL provide `isPlanAtLeast(current, required)` based
@@ -59,19 +65,24 @@ tier.
 
 ### Requirement: Plan-aware account selection
 
-`AccountManager.getCurrentOrNextForFamily` SHALL consider model tier
+`AccountManager.getCurrentOrNextForFamily` and
+`AccountManager.proactivelyRotateForFamily` SHALL consider model tier
 requirements when selecting an account. When a requested `model` has a known
 minimum plan requirement (e.g. `minPlan: "pro"` for Claude Opus or
-`minPlan: "plus"` for Sonnet/GPT-OSS), the selection pipeline SHALL filter or
-prefer candidate accounts whose resolved plan tier satisfies the requirement.
-If no enabled accounts satisfy the requirement, selection SHALL fall back
-gracefully to available accounts rather than hard-failing.
+`minPlan: "plus"` for Sonnet/GPT-OSS/Gemini 4 Argon), the selection pipeline
+SHALL filter or prefer candidate accounts whose resolved plan tier satisfies the
+requirement. `proactivelyRotateForFamily` SHALL NOT rotate off a plan-eligible
+current account when every other candidate in the pool fails
+`isAccountEligibleForModel`. If no enabled accounts satisfy the requirement,
+selection SHALL fall back gracefully to available accounts rather than
+hard-failing.
 
 #### Scenario: Opus request with mixed free and pro accounts
 
 - **WHEN** an account pool contains account 0 (`free`) and account 1 (`pro`)
 - **AND** a request arrives for `antigravity-claude-opus-4-6-thinking`
 - **THEN** account 1 (`pro`) is selected
+- **AND** proactive rotation does not move the request onto account 0 (`free`)
 
 ### Requirement: Full model variants exposure
 
@@ -114,7 +125,20 @@ unless explicitly updating their metadata.
 
 ### Requirement: User plan distinction in UI and CLI
 
-OpenCode 2 `AccountStatus` in `pool-status.ts` SHALL include `planTier: PlanTier`.
+OpenCode 2 `AccountStatus` in `pool-status.ts` SHALL include `planTier: PlanTier`,
+and OpenCode 2 SHALL capture and persist `capturedTierId` /
+`capturedPaidTierId` (plus `capturedTierAt`) via `ensureProjectContext`,
+OAuth login, and `loadManagedProject` + `extractCapturedTierFromPayload`
+backfill for existing accounts whose tier is missing or stale.
 OpenCode 1 `CommandAccountRow` in `command-data.ts` SHALL include `planTier: PlanTier`
 and `formattedPlanTier: string`.
 CLI `antigravity-auth list` SHALL display the resolved plan tier for each account.
+
+#### Scenario: OAuth login and managed-project backfill capture plan tiers in OpenCode 2
+
+- **WHEN** an account logs in via OAuth (`upsertOAuthAccount`) or runs with a
+  cached `managedProjectId` whose tier is missing or older than 24 hours
+- **THEN** OpenCode 2 captures and persists `capturedTierId` /
+  `capturedPaidTierId` and `capturedTierAt`, and defers to an eligible
+  peer if backfilling reveals the initial account is `free` for a higher-tier
+  model

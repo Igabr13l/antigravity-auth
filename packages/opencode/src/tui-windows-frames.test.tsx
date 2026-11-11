@@ -368,4 +368,66 @@ describe('windows rework — reviewer frames', () => {
     expect(frame.indexOf('NG 5h')).toBeLessThan(frame.indexOf('NG 7d'))
     testSetup.renderer.destroy()
   })
+
+  it('(e) Account with dedicated Argon pool renders Ag bar alongside Gemini and Non-Gemini', async () => {
+    const future = Date.now() + 5 * 60 * 1000
+    const future2 = Date.now() + 7 * 24 * 60 * 60 * 1000
+    const payload = writeState({
+      checkedAt: Date.now(),
+      routingAuthoritative: true,
+      accounts: [
+        {
+          id: 'acc-argon',
+          label: 'Plus Account',
+          enabled: true,
+          health: 95,
+          current: true,
+          quota: {
+            gemini: {
+              remainingPercent: 80,
+              resetAt: future2,
+              windows: [
+                { window: '5h', remainingPercent: 80, resetAt: future },
+              ],
+            },
+            argon: {
+              remainingPercent: 30,
+              resetAt: future,
+              windows: [
+                { window: '5h', remainingPercent: 30, resetAt: future },
+              ],
+            },
+            'non-gemini': {
+              remainingPercent: 90,
+              resetAt: future2,
+              windows: [
+                { window: '5h', remainingPercent: 90, resetAt: future },
+              ],
+            },
+          },
+        },
+      ],
+    })
+    mkdirSync(join(fixture.statePath, '..'), { recursive: true })
+    writeFileSync(fixture.statePath, JSON.stringify(payload), 'utf-8')
+
+    const prefs = writePrefs(fixture.prefsPath, { collapsed: false })
+    const controller = createSidebarController(prefs)
+    const testSetup = await testRender(
+      () => (
+        <SidebarPanel
+          controller={controller}
+          logger={NOOP_LOGGER}
+          stateFile={fixture.statePath}
+        />
+      ),
+      { width: 42, height: 18 },
+    )
+    await testSetup.flush()
+    const frame = testSetup.captureCharFrame()
+    expect(frame).toContain('Gm 5h')
+    expect(frame).toContain('Ag 5h')
+    expect(frame).toContain('NG 5h')
+    testSetup.renderer.destroy()
+  })
 })

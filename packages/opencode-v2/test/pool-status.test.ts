@@ -917,4 +917,82 @@ describe('formatting', () => {
       formatResetIn(new Date(NOW + 7 * 24 * 3_600_000).toISOString(), NOW),
     ).toBe('7d')
   })
+
+  test('renders dedicated Argon quota parts and sidebar rows without altering legacy accounts', () => {
+    const status = summarizeAccountPool(
+      pool([
+        { email: 'a@example.test', enabled: true },
+        { email: 'b@example.test', enabled: true },
+      ]),
+      NOW,
+    )
+    const withQuota = attachQuota(
+      status,
+      new Map([
+        [
+          status.accounts[0]!.key,
+          {
+            gemini: { remainingFraction: 0.85, modelCount: 2 },
+            argon: {
+              remainingFraction: 0.4,
+              modelCount: 1,
+              resetTime: new Date(NOW + 90 * 60_000).toISOString(),
+            },
+            'non-gemini': { remainingFraction: 0.7, modelCount: 2 },
+          },
+        ],
+        [
+          status.accounts[1]!.key,
+          {
+            gemini: { remainingFraction: 0.9, modelCount: 2 },
+            'non-gemini': { remainingFraction: 0.8, modelCount: 2 },
+          },
+        ],
+      ]),
+    )
+
+    expect(formatQuotaParts(withQuota.accounts[0]!.quota, NOW)).toEqual([
+      'Gemini 85%',
+      'Argon 40%',
+      'Non-Gemini 70%',
+    ])
+    expect(formatQuotaParts(withQuota.accounts[1]!.quota, NOW)).toEqual([
+      'Gemini 90%',
+      'Non-Gemini 80%',
+    ])
+
+    const argonRows = sidebarRows(withQuota.accounts[0]!, NOW, ['argon'])
+    expect(argonRows.some((row) => row.text.startsWith('▸ A'))).toBe(true)
+    const legacyRows = sidebarRows(withQuota.accounts[1]!, NOW, ['gemini'])
+    expect(legacyRows.some((row) => row.text.includes(' A'))).toBe(false)
+  })
+
+  test('formats exhausted Argon quota with reset duration in parts and sidebar rows', () => {
+    const reset = new Date(NOW + 90 * 60_000).toISOString()
+    const status = summarizeAccountPool(
+      pool([{ email: 'argon@example.test', enabled: true }]),
+      NOW,
+    )
+    const withQuota = attachQuota(
+      status,
+      new Map([
+        [
+          status.accounts[0]!.key,
+          {
+            gemini: { remainingFraction: 0.9, modelCount: 2 },
+            argon: { remainingFraction: 0, resetTime: reset, modelCount: 1 },
+          },
+        ],
+      ]),
+    )
+
+    expect(formatQuotaParts(withQuota.accounts[0]!.quota, NOW)).toEqual([
+      'Gemini 90%',
+      'Argon exhausted (resets 1h 30m)',
+    ])
+    const rows = sidebarRows(withQuota.accounts[0]!, NOW, ['argon'])
+    expect(
+      rows.some((row) => row.text.includes('▸ A') && row.text.includes('0%')),
+    ).toBe(true)
+  })
 })

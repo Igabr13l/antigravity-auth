@@ -49,21 +49,39 @@ account.
 ### Requirement: Endpoint fallback chain
 
 The bridge SHALL attempt the ordered Antigravity endpoint fallback list,
-continuing to the next endpoint on transport errors, 404, and 503/529
-capacity responses until the chain is exhausted.
+continuing to the next endpoint on transport errors and 404, and continuing on
+503/529 capacity responses except skipping fallback to Gemini CLI production
+(`cloudcode-pa.googleapis.com`) when routing Antigravity-only models (`claude*`,
+`gpt-oss*`, `gemini-4-*`, `image*`, `tab_*`).
 
 #### Scenario: Primary endpoint is at capacity
 
-- **WHEN** the first endpoint answers 503
+- **WHEN** the first endpoint answers 503 for a model supported on fallback
+  endpoints (such as `gemini-3.8-flash`)
 - **THEN** the bridge retries the remaining endpoints with the same envelope
   before marking the account
+
+#### Scenario: Primary endpoint is at capacity for an Antigravity-only model
+
+- **WHEN** the daily Antigravity endpoint answers 503 for an Antigravity-only
+  model (such as Claude Opus or Gemini 4 Argon)
+- **THEN** the bridge skips `cloudcode-pa.googleapis.com` fallback, marks model
+  capacity exhaustion immediately, and rotates to the next account
 
 ### Requirement: Quota and capacity marking
 
 The bridge SHALL mark accounts rate-limited with the parsed reason and
 `retry-after`-derived backoff (bounded 1 minute–1 hour) on 429, and mark model
-capacity exhaustion (45 seconds–1 hour) on final 503/529 capacity failure,
-persisting cooldown state to disk.
+capacity exhaustion (45 seconds–1 hour) whenever an owning Antigravity endpoint
+(`endpointOwnsAccountQuota === true`, e.g. `daily`) hits 503/529 capacity failure
+even if subsequent non-owning fallback endpoints fail with 429/503/404/transport
+errors, persisting cooldown state to disk via `requestSaveToDisk`.
+
+#### Scenario: Daily 503 capacity followed by failing prod fallback
+
+- **WHEN** the daily endpoint returns 503 capacity exhaustion and the subsequent
+  `cloudcode-pa.googleapis.com` fallback fails
+- **THEN** the account is marked `MODEL_CAPACITY_EXHAUSTED` and persisted to disk
 
 #### Scenario: 429 with retry-after
 

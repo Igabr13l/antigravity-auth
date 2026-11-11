@@ -101,9 +101,10 @@ const GLOBAL_NOTIFICATION_CURSOR = '__global__';
 const MAX_NOTIFICATION_CURSORS = 256;
 const QUOTA_LABELS = {
   gemini: 'Gm',
+  argon: 'Ag',
   'non-gemini': 'NG'
 };
-const QUOTA_ORDER = ['gemini', 'non-gemini'];
+const QUOTA_ORDER = ['gemini', 'argon', 'non-gemini'];
 const WINDOW_GUTTER = {
   weekly: '7d',
   '5h': '5h'
@@ -584,6 +585,7 @@ function AccountBlock(props) {
       each: QUOTA_ORDER,
       children: key => {
         const poolEntry = props.account.quota[key];
+        if (key === 'argon' && !poolEntry) return null;
         const windows = poolEntry?.windows;
         // Legacy: no windows array — render a single row with the pool label.
         const hasWindows = windows && windows.length > 0;
@@ -878,9 +880,12 @@ export function SidebarPanel(props) {
             // critical non-gemini pool doesn't hide behind a healthy
             // gemini tone. Worst = highest used-percent across available pools.
             const geminiUsed = q?.gemini != null ? 100 - clamp(q.gemini.remainingPercent, 0, 100) : null;
+            const argonUsed = q?.argon != null ? 100 - clamp(q.argon.remainingPercent, 0, 100) : null;
             const nonGeminiUsed = q?.['non-gemini'] != null ? 100 - clamp(q['non-gemini'].remainingPercent, 0, 100) : null;
-            if (geminiUsed === null && nonGeminiUsed === null) return null;
-            return Math.max(geminiUsed ?? 0, nonGeminiUsed ?? 0);
+            if (geminiUsed === null && argonUsed === null && nonGeminiUsed === null) {
+              return null;
+            }
+            return Math.max(geminiUsed ?? 0, argonUsed ?? 0, nonGeminiUsed ?? 0);
           };
           const poolText = key => {
             const entry = account()?.quota[key];
@@ -914,8 +919,8 @@ export function SidebarPanel(props) {
                 _$setProp(_el$43, "flexDirection", 'row');
                 _$insertNode(_el$44, _el$45);
                 _$insert(_el$45, (() => {
-                  var _c$ = _$memo(() => !!(account()?.quota.gemini == null && account()?.quota['non-gemini'] == null));
-                  return () => _c$() ? '—' : `${poolText('gemini')} · ${poolText('non-gemini')}`;
+                  var _c$ = _$memo(() => !!(account()?.quota.gemini == null && account()?.quota.argon == null && account()?.quota['non-gemini'] == null));
+                  return () => _c$() ? '—' : [poolText('gemini'), ...(account()?.quota.argon != null ? [poolText('argon')] : []), poolText('non-gemini')].join(' · ');
                 })());
                 _$insert(_el$46, () => unavailable() ? ' ⊘' : ' ●');
                 _$effect(_p$ => {

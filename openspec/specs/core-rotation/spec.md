@@ -85,6 +85,19 @@ eligible candidates it SHALL return `null`.
   80
 - **THEN** the current account keeps the session
 
+### Requirement: Plan-aware proactive rotation
+
+`proactivelyRotateForFamily` SHALL filter candidate accounts using
+`isAccountEligibleForModel(account, model)` when `model` is provided, and SHALL
+return `null` instead of rotating onto a lower-tier ineligible account when the
+current account satisfies the model's minimum plan requirement.
+
+#### Scenario: Holding an eligible Pro account under soft quota when only Free peers exist
+
+- **WHEN** the active account is `pro` on `antigravity-claude-opus-4-6-thinking`
+  and the only alternative candidate is `free`
+- **THEN** `proactivelyRotateForFamily` returns `null` rather than rotating onto the `free` account
+
 ### Requirement: Jitter and delay utilities
 
 `addJitter` SHALL vary the base delay by ±`jitterFactor` (default 0.3) and

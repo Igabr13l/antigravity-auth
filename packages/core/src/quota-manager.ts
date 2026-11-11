@@ -424,6 +424,9 @@ export function classifyQuotaGroup(
   // pool. `tab_*` autocomplete IDs are already classified by
   // `getQuotaGroupForModel` above (the registry/prefix branches), so
   // this fallback only runs for genuinely-unrecognised model strings.
+  if (combined.includes('argon')) {
+    return 'argon'
+  }
   if (combined.includes('claude') || combined.includes('gpt-oss')) {
     return 'non-gemini'
   }
@@ -604,7 +607,28 @@ function mostConstrainedWindow(
  *   `gemini-*` → gemini
  *   `3p-*`     → non-gemini
  */
-function poolForBucketId(bucketId: string): QuotaGroup | null {
+function isArgonRuqsGroup(group?: {
+  displayName?: string
+  description?: string
+}): boolean {
+  const displayName = group?.displayName?.toLowerCase() ?? ''
+  if (displayName.includes('argon')) return true
+  const description = group?.description?.toLowerCase() ?? ''
+  if (!description.includes('argon')) return false
+  return (
+    !description.includes('flash') &&
+    !description.includes('pro') &&
+    !description.includes('carbon')
+  )
+}
+
+function poolForBucketId(
+  bucketId: string,
+  group?: { displayName?: string; description?: string },
+): QuotaGroup | null {
+  if (bucketId.toLowerCase().includes('argon') || isArgonRuqsGroup(group)) {
+    return 'argon'
+  }
   if (bucketId.startsWith('gemini-')) return 'gemini'
   if (bucketId.startsWith('3p-')) return 'non-gemini'
   return null
@@ -663,7 +687,7 @@ export function aggregateQuotaSummary(
   for (const group of response.groups) {
     const windows: QuotaWindowEntry[] = []
     for (const bucket of group.buckets) {
-      const pool = poolForBucketId(bucket.bucketId)
+      const pool = poolForBucketId(bucket.bucketId, group)
       if (!pool) continue
       windows.push({
         window: bucket.window,
@@ -686,10 +710,10 @@ export function aggregateQuotaSummary(
     // group.buckets[0] unconditionally, which silently dropped the
     // whole group when an unknown prefix led the array.
     const recognizedBucket = group.buckets.find((bucket) =>
-      poolForBucketId(bucket.bucketId),
+      poolForBucketId(bucket.bucketId, group),
     )
     if (!recognizedBucket) continue
-    const pool = poolForBucketId(recognizedBucket.bucketId)
+    const pool = poolForBucketId(recognizedBucket.bucketId, group)
     if (!pool || !constrained) continue
 
     // The description is a list of model names comma-separated, often
