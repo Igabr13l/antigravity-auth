@@ -1,15 +1,18 @@
 /**
  * Device Fingerprint Generator for Rate Limit Mitigation
  *
- * Uses the agy CLI 1.1.24 content-request identity captured with mitmproxy:
- * an Antigravity CLI User-Agent with explicit client, OS, architecture, and auth metadata.
- * The stored deviceId/sessionToken fields are
- * retained for account history, but content requests only send User-Agent.
+ * Uses the agy CLI content-request identity captured with mitmproxy:
+ * `antigravity/cli/<version> (aidev_client; os_type=...; arch=...; cl=...; auth_method=consumer)`.
+ * Stored deviceId/sessionToken fields are retained for account history,
+ * while content and quota requests send this User-Agent.
  */
 
 import * as crypto from 'node:crypto'
 
-export const AGY_CLI_VERSION = '1.1.24'
+// Keep in sync with current Antigravity releases: daily-cloudcode-pa.googleapis.com
+// gates newer models (e.g., gemini-4-hydrogen-*, gemini-4-argon-*) behind this version
+// and returns 404 NOT_FOUND if AGY_CLI_VERSION is too old.
+export const AGY_CLI_VERSION = '2.31.2'
 export const AGY_CLI_CHANGE_LIST = '974782877'
 const ANTIGRAVITY_API_CLIENT = 'antigravity-cli'
 
