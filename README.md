@@ -1,8 +1,98 @@
-# Antigravity Auth
+# Antigravity Auth (OpenCode 2 Edition)
 
-Google Antigravity OAuth for coding agents. Authenticate with your Google account and access Antigravity quota for Gemini, Claude, and GPT-OSS models from OpenCode, the Pi coding agent, or the standalone CLI.
+> ⚠️ **IMPORTANTE: Esta versión y fork del repositorio está optimizada y mantenida exclusivamente para OpenCode 2.x.**
+>
+> Para OpenCode 1.x o Pi, utilizá el repositorio original de CortexKit. Este fork incluye soporte nativo para OpenCode 2 (`@opencode-ai/plugin` v2 promise-plugins y TUI integrado), soporte completo para **Gemini 4 Hydrogen** (con variantes `low`, `medium`, `high`, `xhigh`), **Gemini 4 Argon / Carbon**, **Claude 5.5 / 4.6** con enrutamiento estricto por tier de cuenta (Free vs Pro) y el fix de compatibilidad de backend `AGY_CLI_VERSION 2.31.2`.
 
-This monorepo ships four packages:
+Google Antigravity OAuth para OpenCode 2. Autenticate con tus cuentas de Google y usá la cuota de Antigravity para modelos Gemini (incluyendo Hydrogen y Argon), Claude (Opus / Sonnet 5.5 y 4.6) y GPT-OSS desde OpenCode 2 con rotación automática de cuentas y TUI visual en vivo.
+
+---
+
+## Instalación para OpenCode 2
+
+### 1. Clonar e instalar localmente (Recomendado)
+
+Podés instalar el plugin directamente en tu entorno local de OpenCode 2 con un solo comando:
+
+```bash
+# 1. Clonar el repositorio
+git clone https://github.com/Igabr13l/antigravity-auth.git
+cd antigravity-auth
+
+# 2. Instalar dependencias con Bun y compilar
+bun install
+bun run build
+
+# 3. Instalar el plugin en tu OpenCode 2 (~/.config/opencode/plugins/antigravity-auth)
+bun run --cwd packages/opencode-v2 install:local
+```
+
+El script `install:local` compila y copia automáticamente los módulos necesarios a `~/.config/opencode/plugins/antigravity-auth/`, vinculando `@cortexkit/antigravity-auth-core`. OpenCode 2 detecta plugins en esa carpeta de forma automática.
+
+### 2. Configurar los modelos en OpenCode 2
+
+Editá tu archivo de configuración de OpenCode (`~/.config/opencode/opencode.json`):
+
+```jsonc
+{
+  "plugins": ["@cortexkit/opencode-v2-antigravity-auth"],
+  "providers": {
+    "google": {
+      "models": {
+        "gemini-4-hydrogen": {
+          "name": "Gemini 4 Hydrogen",
+          "variants": {
+            "low": { "thinking": "low" },
+            "medium": { "thinking": "medium" },
+            "high": { "thinking": "high" },
+            "xhigh": { "thinking": "xhigh" }
+          }
+        },
+        "gemini-4-argon": {
+          "name": "Gemini 4 Argon",
+          "variants": {
+            "low": { "thinking": "low" },
+            "medium": { "thinking": "medium" },
+            "high": { "thinking": "high" }
+          }
+        },
+        "gemini-3.8-flash": {
+          "name": "Gemini 3.8 Flash",
+          "variants": {
+            "low": { "thinking": "low" },
+            "medium": { "thinking": "medium" },
+            "high": { "thinking": "high" }
+          }
+        },
+        "claude-opus-5-5-thinking": {
+          "name": "Claude Opus 5.5"
+        },
+        "claude-sonnet-5-5-thinking": {
+          "name": "Claude Sonnet 5.5"
+        },
+        "claude-opus-4-6-thinking": {
+          "name": "Claude Opus 4.6"
+        },
+        "claude-sonnet-4-6": {
+          "name": "Claude Sonnet 4.6"
+        }
+      }
+    }
+  }
+}
+```
+
+Podés revisar el ejemplo completo en [`packages/opencode-v2/example/opencode.json`](packages/opencode-v2/example/opencode.json).
+
+### 3. Iniciar sesión y recargar
+
+1. Si tenías OpenCode corriendo en modo servicio, reinicialo para que cargue la nueva versión del plugin:
+   ```bash
+   pkill -f "opencode serve"
+   ```
+2. Abrí OpenCode y usá `ctrl+g` para abrir el administrador de cuentas de Antigravity en la TUI, o autenticate normalmente.
+
+---
 
 ## Table of contents
 
