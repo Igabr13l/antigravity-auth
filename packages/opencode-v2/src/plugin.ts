@@ -1017,7 +1017,6 @@ export function createOpenCodeV2AntigravityPlugin(
               .some(
                 (peer) =>
                   peer.index !== account.index &&
-                  !excluded.has(peer.index) &&
                   resolveAccountPlanTier(peer) !== 'unknown' &&
                   isAccountEligibleForModel(peer, requested),
               )

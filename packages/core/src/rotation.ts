@@ -713,6 +713,10 @@ export function initTokenTracker(
   return globalTokenTracker
 }
 
+export function resetTokenTracker(): void {
+  globalTokenTracker = null
+}
+
 let globalHealthTracker: HealthScoreTracker | null = null
 
 /**
@@ -735,4 +739,8 @@ export function initHealthTracker(
 ): HealthScoreTracker {
   globalHealthTracker = new HealthScoreTracker(config)
   return globalHealthTracker
+}
+
+export function resetHealthTracker(): void {
+  globalHealthTracker = null
 }

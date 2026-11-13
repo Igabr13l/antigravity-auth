@@ -11,15 +11,27 @@ type GoogleSearchAuthLoader = () => Promise<
   Awaited<ReturnType<GetAuth>> | null | undefined
 >
 
-export function createGoogleSearchTool({
-  getAuth,
-  client,
-  providerId,
-}: {
-  getAuth: GoogleSearchAuthLoader
-  client: PluginClient
-  providerId: string
-}): PluginTool {
+export interface GoogleSearchToolDependencies {
+  executeSearch?: typeof executeSearch
+  refreshAccessToken?: typeof refreshAccessToken
+}
+
+export function createGoogleSearchTool(
+  {
+    getAuth,
+    client,
+    providerId,
+  }: {
+    getAuth: GoogleSearchAuthLoader
+    client: PluginClient
+    providerId: string
+  },
+  dependencies?: GoogleSearchToolDependencies,
+): PluginTool {
+  const doExecuteSearch = dependencies?.executeSearch ?? executeSearch
+  const doRefreshAccessToken =
+    dependencies?.refreshAccessToken ?? refreshAccessToken
+
   return tool({
     description:
       "Search the web using Google Search and analyze URLs. Returns real-time information from the internet with source citations. Use this when you need up-to-date information about current events, recent developments, or any topic that may have changed. You can also provide specific URLs to analyze. IMPORTANT: If the user mentions or provides any URLs in their query, you MUST extract those URLs and pass them in the 'urls' parameter for direct analysis.",
@@ -58,7 +70,7 @@ export function createGoogleSearchTool({
       let accessToken = auth.access
       if (!accessToken || accessTokenExpired(auth)) {
         try {
-          const refreshed = await refreshAccessToken(auth, client, providerId)
+          const refreshed = await doRefreshAccessToken(auth, client, providerId)
           accessToken = refreshed?.access
         } catch (error) {
           return `Error: Failed to refresh access token: ${error instanceof Error ? error.message : String(error)}`
@@ -69,7 +81,7 @@ export function createGoogleSearchTool({
         return 'Error: No valid access token available. Please run `opencode auth login` to re-authenticate.'
       }
 
-      return executeSearch(
+      return doExecuteSearch(
         {
           query: args.query,
           urls: args.urls,

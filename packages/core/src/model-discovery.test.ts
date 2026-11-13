@@ -51,9 +51,12 @@ describe('model-discovery', () => {
     expect(model?.minPlan).toBe('free')
   })
 
-  it('transforms Claude model with disabled variants and pro plan for opus', () => {
+  it('transforms Claude model with disabled variants and pro plan for opus 5.5 and free for 4.6', () => {
     const definitions = discoverModelsFromApiResponse({
       models: {
+        'claude-opus-5-5-thinking': {
+          displayName: 'Claude Opus 5.5 Thinking',
+        },
         'claude-opus-4-6-thinking': {
           displayName: 'Claude Opus 4.6 Thinking',
         },
@@ -63,15 +66,22 @@ describe('model-discovery', () => {
       },
     })
 
-    const opus = definitions['antigravity-claude-opus-4-6-thinking']
-    expect(opus?.variants).toEqual({
+    const opus55 = definitions['antigravity-claude-opus-5-5-thinking']
+    expect(opus55?.variants).toEqual({
       low: { disabled: true },
       high: { disabled: true },
     })
-    expect(opus?.minPlan).toBe('pro')
+    expect(opus55?.minPlan).toBe('pro')
+
+    const opus46 = definitions['antigravity-claude-opus-4-6-thinking']
+    expect(opus46?.variants).toEqual({
+      low: { disabled: true },
+      high: { disabled: true },
+    })
+    expect(opus46?.minPlan).toBe('free')
 
     const sonnet = definitions['antigravity-claude-sonnet-4-6-thinking']
-    expect(sonnet?.minPlan).toBe('plus')
+    expect(sonnet?.minPlan).toBe('free')
   })
 
   it('transforms image model without reasoning and with image output modality', () => {

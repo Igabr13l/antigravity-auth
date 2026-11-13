@@ -233,13 +233,13 @@ describe('model registry', () => {
       'pro',
     )
     expect(definitions['antigravity-claude-opus-4-6-thinking']?.minPlan).toBe(
-      'pro',
+      'free',
     )
     expect(definitions['antigravity-claude-sonnet-5-5-thinking']?.minPlan).toBe(
       'plus',
     )
     expect(definitions['antigravity-claude-sonnet-4-6-thinking']?.minPlan).toBe(
-      'plus',
+      'free',
     )
     expect(definitions['antigravity-gemini-4-argon']?.minPlan).toBe('plus')
     expect(definitions['antigravity-gpt-oss-120b-medium']?.minPlan).toBe('plus')

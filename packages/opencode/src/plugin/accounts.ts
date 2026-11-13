@@ -27,7 +27,7 @@ export {
   resolveQuotaGroup,
 } from '@cortexkit/antigravity-auth-core'
 
-const openCodeStore: AccountManagerOptions['store'] = {
+export const defaultOpenCodeStore: AccountManagerOptions['store'] = {
   load: async () => loadAccounts(),
   saveMerged: async (_path, next) => {
     await saveAccounts(next)
@@ -46,6 +46,14 @@ const openCodeStore: AccountManagerOptions['store'] = {
   clear: async () => {},
 }
 
+let activeStore = defaultOpenCodeStore
+export function setOpenCodeStore(store: AccountManagerOptions['store']): void {
+  activeStore = store
+}
+export function resetOpenCodeStore(): void {
+  activeStore = defaultOpenCodeStore
+}
+
 export class AccountManager extends CoreAccountManager {
   constructor(
     authFallback?: OAuthAuthDetails,
@@ -53,7 +61,7 @@ export class AccountManager extends CoreAccountManager {
     options: Partial<AccountManagerOptions> = {},
   ) {
     super(authFallback, stored, {
-      store: options.store ?? openCodeStore,
+      store: options.store ?? activeStore,
       storagePath: options.storagePath ?? getStoragePath(),
       now: options.now,
       random: options.random,

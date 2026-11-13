@@ -77,12 +77,19 @@ current account when every other candidate in the pool fails
 selection SHALL fall back gracefully to available accounts rather than
 hard-failing.
 
-#### Scenario: Opus request with mixed free and pro accounts
+#### Scenario: Opus 5.5 request with mixed free and pro accounts
 
 - **WHEN** an account pool contains account 0 (`free`) and account 1 (`pro`)
-- **AND** a request arrives for `antigravity-claude-opus-4-6-thinking`
+- **AND** a request arrives for `antigravity-claude-opus-5-5-thinking`
 - **THEN** account 1 (`pro`) is selected
 - **AND** proactive rotation does not move the request onto account 0 (`free`)
+
+#### Scenario: Claude 4.6 request with mixed free and pro accounts
+
+- **WHEN** an account pool contains account 0 (`free`) and account 1 (`pro`)
+- **AND** a request arrives for `antigravity-claude-opus-4-6-thinking` or `antigravity-claude-sonnet-4-6-thinking`
+- **THEN** account 0 (`free`) is selected because Google deprecated 4.6 on paid tiers
+- **AND** proactive rotation does not move the request onto account 1 (`pro`)
 
 ### Requirement: Full model variants exposure
 

@@ -73,6 +73,8 @@ interface ContextOverrides {
   fetchImpl?: Parameters<typeof createFetchInterceptor>[0]['fetchImpl']
 }
 
+const createdManagers: AccountManager[] = []
+
 async function makeContext(overrides: ContextOverrides = {}) {
   const root = process.env.ANTIGRAVITY_TEST_ROOT
   if (!root) throw new Error('ANTIGRAVITY_TEST_ROOT not set by preload')
@@ -106,6 +108,7 @@ async function makeContext(overrides: ContextOverrides = {}) {
       },
       storedAccounts(),
     )
+  createdManagers.push(accountManager)
 
   return {
     client: overrides.client ?? fakeClient(),
@@ -144,6 +147,15 @@ beforeEach(async () => {
 })
 
 afterEach(() => {
+  for (const manager of createdManagers) {
+    if ((manager as any).saveTimeout) {
+      clearTimeout((manager as any).saveTimeout)
+      ;(manager as any).saveTimeout = null
+    }
+    ;(manager as any).savePending = false
+    ;(manager as any).disposed = true
+  }
+  createdManagers.length = 0
   globalThis.unstubAllGlobals()
 })
 

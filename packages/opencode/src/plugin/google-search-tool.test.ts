@@ -1,13 +1,10 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
 
-const executeSearch = mock(async () => 'search result')
-const refreshAccessToken = mock(async () => undefined)
-
-mock.module('./search', () => ({ executeSearch }))
-mock.module('./token', () => ({ refreshAccessToken }))
-
 import { createGoogleSearchTool } from './google-search-tool'
 import type { AuthDetails } from './types'
+
+const executeSearch = mock(async () => 'search result')
+const refreshAccessToken = mock(async () => undefined)
 
 type SearchTool = {
   execute: (
@@ -19,11 +16,14 @@ type SearchTool = {
 function toolWith(
   getAuth: () => Promise<AuthDetails | null | undefined>,
 ): SearchTool {
-  return createGoogleSearchTool({
-    getAuth,
-    client: { auth: { set: mock(async () => {}) } } as never,
-    providerId: 'google',
-  }) as unknown as SearchTool
+  return createGoogleSearchTool(
+    {
+      getAuth,
+      client: { auth: { set: mock(async () => {}) } } as never,
+      providerId: 'google',
+    },
+    { executeSearch, refreshAccessToken },
+  ) as unknown as SearchTool
 }
 
 beforeEach(() => {

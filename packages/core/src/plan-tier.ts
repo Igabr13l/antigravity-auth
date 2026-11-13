@@ -116,6 +116,14 @@ export function getMinimumPlanForModel(modelId: string): PlanTier {
   if (lower.includes('carbon')) {
     return 'ultra'
   }
+  // Claude 4.6 models are legacy Free tier models on Google's backend.
+  // Claude 5.5 models require Plus (Sonnet) or Pro (Opus).
+  if (
+    lower.includes('claude') &&
+    (lower.includes('4-6') || lower.includes('4.6'))
+  ) {
+    return 'free'
+  }
   if (lower.includes('opus') || lower.includes('ultra')) {
     return 'pro'
   }
@@ -140,6 +148,16 @@ export function isAccountEligibleForModel(
   const plan = resolveAccountPlanTier(account)
   if (plan === 'unknown') {
     return true
+  }
+  const lower = modelId.toLowerCase()
+  // Google deprecated Claude 4.6 on paid tiers (Plus/Pro/Ultra) and only serves it
+  // to Free tier accounts. Paid accounts receive:
+  // "Claude Opus 4.6 is no longer available. Please switch to Claude Opus 5.5."
+  if (
+    lower.includes('claude') &&
+    (lower.includes('4-6') || lower.includes('4.6'))
+  ) {
+    return plan === 'free'
   }
   const required = getMinimumPlanForModel(modelId)
   return isPlanAtLeast(plan, required)

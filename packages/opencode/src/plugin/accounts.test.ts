@@ -10,37 +10,60 @@ import {
 } from 'bun:test'
 
 import {
+  type AccountManagerOptions,
+  resetHealthTracker,
+  resetTokenTracker,
+} from '@cortexkit/antigravity-auth-core'
+import {
   AccountManager,
   calculateBackoffMs,
   type ModelFamily,
   parseRateLimitReason,
+  resetOpenCodeStore,
   resolveQuotaGroup,
+  setOpenCodeStore,
 } from './accounts'
-// Mock storage to prevent test data from leaking to real config files.
-// Bun's `mock.module` doesn't support the `importOriginal` callback that
-// Vitest exposes, so we capture the real exports first and merge.
-import * as realStorage from './storage'
-import {
-  type AccountStorageV4,
-  saveAccounts,
-  saveAccountsReplace,
-} from './storage'
+import type { AccountStorageV4 } from './storage'
 import type { OAuthAuthDetails } from './types'
 
-mock.module('./storage', () => ({
-  ...realStorage,
-  saveAccounts: mock().mockResolvedValue(undefined),
-  saveAccountsReplace: mock().mockResolvedValue(undefined),
-}))
+const mockSaveAccounts = mock(async (_accounts: AccountStorageV4) => {})
+const mockSaveAccountsReplace = mock(async (_accounts: AccountStorageV4) => {})
+
+const mockStore: NonNullable<AccountManagerOptions['store']> = {
+  load: async () => null,
+  saveMerged: async (_path, next) => {
+    await mockSaveAccounts(next)
+    return next
+  },
+  mutate: async (_path, fn) => {
+    const current: AccountStorageV4 = {
+      version: 4,
+      accounts: [],
+      activeIndex: 0,
+    }
+    const next = (await fn(current)) ?? current
+    await mockSaveAccountsReplace(next)
+    return next
+  },
+  clear: async () => {},
+}
 
 describe('AccountManager', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     jest.useRealTimers()
+    resetTokenTracker()
+    resetHealthTracker()
+    setOpenCodeStore(mockStore)
+    mockSaveAccounts.mockClear()
+    mockSaveAccountsReplace.mockClear()
     globalThis.stubbed('process', { ...process, pid: 0 })
   })
 
   afterEach(() => {
+    resetTokenTracker()
+    resetHealthTracker()
+    resetOpenCodeStore()
     globalThis.unstubAllGlobals()
   })
 
@@ -85,7 +108,7 @@ describe('AccountManager', () => {
     expect(manager.setAccountEnabled(0, true)).toBe(false)
 
     await manager.saveToDisk()
-    expect(saveAccounts as any).toHaveBeenCalledWith(
+    expect(mockSaveAccounts).toHaveBeenCalledWith(
       expect.objectContaining({
         accounts: [
           expect.objectContaining({
@@ -509,8 +532,8 @@ describe('AccountManager', () => {
   })
 
   it('persists account removal via replace (no merge) so deletions stick', async () => {
-    ;(saveAccounts as any).mockClear()
-    ;(saveAccountsReplace as any).mockClear()
+    mockSaveAccounts.mockClear()
+    mockSaveAccountsReplace.mockClear()
 
     const stored: AccountStorageV4 = {
       version: 4,
@@ -531,8 +554,8 @@ describe('AccountManager', () => {
 
     // Must use replace (full overwrite), not merge — merge re-reads the file and
     // resurrects the deleted account.
-    expect(saveAccountsReplace).toHaveBeenCalledTimes(1)
-    const saved = (saveAccountsReplace as any).mock.calls.at(-1)?.[0]
+    expect(mockSaveAccountsReplace).toHaveBeenCalledTimes(1)
+    const saved = mockSaveAccountsReplace.mock.calls.at(-1)?.[0]
     expect(
       saved?.accounts.map((a: { refreshToken: string }) => a.refreshToken),
     ).toEqual(['r1'])
@@ -565,7 +588,7 @@ describe('AccountManager', () => {
   it('does not persist transient cooldown and switch metadata', async () => {
     jest.useFakeTimers()
     jest.setSystemTime(new Date(0))
-    ;(saveAccounts as any).mockClear()
+    mockSaveAccounts.mockClear()
 
     const stored: AccountStorageV4 = {
       version: 4,
@@ -582,7 +605,7 @@ describe('AccountManager', () => {
 
     await manager.saveToDisk()
 
-    const saved = (saveAccounts as any).mock.calls.at(-1)?.[0]
+    const saved = mockSaveAccounts.mock.calls.at(-1)?.[0]
     expect(saved?.accounts[0]).not.toHaveProperty('lastSwitchReason')
     expect(saved?.accounts[0]).not.toHaveProperty('coolingDownUntil')
     expect(saved?.accounts[0]).not.toHaveProperty('cooldownReason')

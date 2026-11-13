@@ -122,13 +122,13 @@ describe('plan-tier', () => {
       ).toBe('pro')
       expect(
         getMinimumPlanForModel('antigravity-claude-opus-4-6-thinking'),
-      ).toBe('pro')
+      ).toBe('free')
       expect(
         getMinimumPlanForModel('antigravity-claude-sonnet-5-5-thinking'),
       ).toBe('plus')
       expect(
         getMinimumPlanForModel('antigravity-claude-sonnet-4-6-thinking'),
-      ).toBe('plus')
+      ).toBe('free')
       expect(getMinimumPlanForModel('antigravity-gemini-4-argon')).toBe('plus')
       expect(getMinimumPlanForModel('antigravity-gpt-oss-120b-medium')).toBe(
         'plus',
@@ -145,30 +145,31 @@ describe('plan-tier', () => {
       const proAccount = { capturedTierId: 'pro-tier' }
       const unknownAccount = {}
 
-      // Free model
+      // Free Gemini model - eligible for all
       expect(
         isAccountEligibleForModel(freeAccount, 'antigravity-gemini-3.8-flash'),
       ).toBe(true)
+      expect(
+        isAccountEligibleForModel(proAccount, 'antigravity-gemini-3.8-flash'),
+      ).toBe(true)
 
-      // Plus model
+      // Claude 4.6 - only Free accounts (Google rejects on paid tiers with deprecation error)
       expect(
         isAccountEligibleForModel(
           freeAccount,
           'antigravity-claude-sonnet-4-6-thinking',
         ),
-      ).toBe(false)
+      ).toBe(true)
+      expect(
+        isAccountEligibleForModel(
+          freeAccount,
+          'antigravity-claude-opus-4-6-thinking',
+        ),
+      ).toBe(true)
       expect(
         isAccountEligibleForModel(
           plusAccount,
           'antigravity-claude-sonnet-4-6-thinking',
-        ),
-      ).toBe(true)
-
-      // Pro model
-      expect(
-        isAccountEligibleForModel(
-          plusAccount,
-          'antigravity-claude-opus-4-6-thinking',
         ),
       ).toBe(false)
       expect(
@@ -176,13 +177,53 @@ describe('plan-tier', () => {
           proAccount,
           'antigravity-claude-opus-4-6-thinking',
         ),
+      ).toBe(false)
+
+      // Claude 5.5 Sonnet (requires Plus)
+      expect(
+        isAccountEligibleForModel(
+          freeAccount,
+          'antigravity-claude-sonnet-5-5-thinking',
+        ),
+      ).toBe(false)
+      expect(
+        isAccountEligibleForModel(
+          plusAccount,
+          'antigravity-claude-sonnet-5-5-thinking',
+        ),
+      ).toBe(true)
+      expect(
+        isAccountEligibleForModel(
+          proAccount,
+          'antigravity-claude-sonnet-5-5-thinking',
+        ),
+      ).toBe(true)
+
+      // Claude 5.5 Opus (requires Pro)
+      expect(
+        isAccountEligibleForModel(
+          freeAccount,
+          'antigravity-claude-opus-5-5-thinking',
+        ),
+      ).toBe(false)
+      expect(
+        isAccountEligibleForModel(
+          plusAccount,
+          'antigravity-claude-opus-5-5-thinking',
+        ),
+      ).toBe(false)
+      expect(
+        isAccountEligibleForModel(
+          proAccount,
+          'antigravity-claude-opus-5-5-thinking',
+        ),
       ).toBe(true)
 
       // Unknown account is eligible (fail-open)
       expect(
         isAccountEligibleForModel(
           unknownAccount,
-          'antigravity-claude-opus-4-6-thinking',
+          'antigravity-claude-opus-5-5-thinking',
         ),
       ).toBe(true)
     })

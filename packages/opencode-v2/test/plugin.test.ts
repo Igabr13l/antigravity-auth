@@ -479,7 +479,7 @@ describe('plan tier capture and capacity fallback routing', () => {
 
       // Next request wants Opus: account 0 is now known free-tier, while
       // account 1 is unknown/eligible so account 1 gets selected and backfills g1-pro-tier!
-      const opusEvent = makeEvent('claude-opus-4-6-thinking', 'tier-session-2')
+      const opusEvent = makeEvent('claude-opus-5-5-thinking', 'tier-session-2')
       await httpRequestHook!(opusEvent as never)
       const opusResponse = await fetch(opusEvent.request)
       expect(opusResponse.status).toBe(200)

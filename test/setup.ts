@@ -47,6 +47,7 @@ process.env.ANTIGRAVITY_AUTH_RPC_DIR = join(
   'rpc',
 )
 
+const nativeFetch = globalThis.fetch
 const stubbedGlobals = new Map<string, unknown>()
 const dateNowSpyState: { active: boolean } = { active: false }
 
@@ -65,16 +66,17 @@ const dateNowSpyState: { active: boolean } = { active: false }
   ;(globalThis as Record<string, unknown>)[name] = value
 }
 
-/**
- * Restore every global replaced via `globalThis.stubbed(...)` since the last
- * reset. Tests call this in `afterEach` to undo stubbedGlobal equivalents.
- */
-;(globalThis as Record<string, unknown>).unstubAllGlobals = () => {
+function unstubAllGlobals(): void {
   for (const [name, original] of stubbedGlobals) {
     ;(globalThis as Record<string, unknown>)[name] = original
   }
   stubbedGlobals.clear()
 }
+/**
+ * Restore every global replaced via `globalThis.stubbed(...)` since the last
+ * reset. Tests call this in `afterEach` to undo stubbedGlobal equivalents.
+ */
+;(globalThis as Record<string, unknown>).unstubAllGlobals = unstubAllGlobals
 
 /**
  * Cache-busting dynamic import — re-evaluates the module so module-level
@@ -123,6 +125,8 @@ jest.useRealTimers = (() => {
 // exiting cleanly between the lock renewal / RPC server tests.
 afterEach(() => {
   jest.useRealTimers()
+  unstubAllGlobals()
+  globalThis.fetch = nativeFetch
 })
 
 afterAll(() => rmSync(root, { recursive: true, force: true }))

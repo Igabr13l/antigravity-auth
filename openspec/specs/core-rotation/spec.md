@@ -94,7 +94,7 @@ current account satisfies the model's minimum plan requirement.
 
 #### Scenario: Holding an eligible Pro account under soft quota when only Free peers exist
 
-- **WHEN** the active account is `pro` on `antigravity-claude-opus-4-6-thinking`
+- **WHEN** the active account is `pro` on `antigravity-claude-opus-5-5-thinking`
   and the only alternative candidate is `free`
 - **THEN** `proactivelyRotateForFamily` returns `null` rather than rotating onto the `free` account
 

@@ -862,8 +862,15 @@ export class AccountManager {
             isAccountEligibleForModel(acc, model),
           )
         : eligibleAccounts
+      const hasKnownEligibleInPool = model
+        ? eligibleAccounts.some((acc) => isAccountEligibleForModel(acc, model))
+        : false
       const poolForHybrid =
-        planEligible.length > 0 ? planEligible : eligibleAccounts
+        planEligible.length > 0
+          ? planEligible
+          : hasKnownEligibleInPool
+            ? []
+            : eligibleAccounts
       const accountsWithMetrics: AccountWithMetrics[] = poolForHybrid.map(
         (acc) => {
           clearExpiredRateLimits(acc, this.now)
@@ -1040,7 +1047,20 @@ export class AccountManager {
     const planEligible = model
       ? available.filter((account) => isAccountEligibleForModel(account, model))
       : available
-    const eligiblePool = planEligible.length > 0 ? planEligible : available
+    const hasKnownEligibleInPool = model
+      ? this.accounts.some(
+          (acc) =>
+            acc.enabled !== false &&
+            !excludeIndexes?.has(acc.index) &&
+            isAccountEligibleForModel(acc, model),
+        )
+      : false
+    const eligiblePool =
+      planEligible.length > 0
+        ? planEligible
+        : hasKnownEligibleInPool
+          ? []
+          : available
 
     const usedAccounts = this.getUsedAccounts(identity)
     const sessionUsed = eligiblePool.filter((account) =>

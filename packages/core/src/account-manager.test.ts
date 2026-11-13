@@ -635,14 +635,23 @@ describe('managedProjectId projection', () => {
     expect(manager.getAccountPlanTier(0)).toBe('free')
     expect(manager.getAccountPlanTier(1)).toBe('pro')
 
-    // Requesting Opus (requires pro): account 0 is free, so account 1 (pro) must be chosen
+    // Requesting Opus 5.5 (requires pro): account 0 is free, so account 1 (pro) must be chosen
     const selected = manager.getCurrentOrNextForFamily(
+      'claude',
+      'antigravity-claude-opus-5-5-thinking',
+      'sticky',
+      'antigravity',
+    )
+    expect(selected?.index).toBe(1)
+
+    // Requesting Claude 4.6 (exclusive to free): account 1 is pro, so account 0 (free) must be chosen
+    const selected46 = manager.getCurrentOrNextForFamily(
       'claude',
       'antigravity-claude-opus-4-6-thinking',
       'sticky',
       'antigravity',
     )
-    expect(selected?.index).toBe(1)
+    expect(selected46?.index).toBe(0)
   })
 
   it('resolves gemini-4-argon models to the argon quota group', () => {
@@ -706,10 +715,10 @@ describe('managedProjectId projection', () => {
       now: () => 1_000,
     })
 
-    // Proactive rotation for Opus must skip account 1 (free) and pick account 2 (ultra)
+    // Proactive rotation for Opus 5.5 must skip account 1 (free) and pick account 2 (ultra)
     const opusRotated = manager.proactivelyRotateForFamily(
       'claude',
-      'claude-opus-4-6-thinking',
+      'claude-opus-5-5-thinking',
       'antigravity',
       80,
       60_000,
@@ -727,7 +736,7 @@ describe('managedProjectId projection', () => {
       ),
     ).toBe(false)
 
-    // When only free non-eligible accounts remain for Opus and current is pro, do not rotate to free.
+    // When only free non-eligible accounts remain for Opus 5.5 and current is pro, do not rotate to free.
     const twoAccountStorage: AccountStorageV4 = {
       version: 4,
       accounts: stored.accounts.slice(0, 2),
@@ -740,7 +749,7 @@ describe('managedProjectId projection', () => {
     })
     const stayedOnPro = twoManager.proactivelyRotateForFamily(
       'claude',
-      'claude-opus-4-6-thinking',
+      'claude-opus-5-5-thinking',
       'antigravity',
       80,
       60_000,

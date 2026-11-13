@@ -186,7 +186,7 @@ const ALL_MODEL_DEFINITIONS: OpencodeModelDefinitions = {
         low: { disabled: true },
         high: { disabled: true },
       },
-      minPlan: 'plus',
+      minPlan: 'free',
     },
   ),
   'antigravity-claude-opus-4-6-thinking': defineModel(
@@ -200,7 +200,7 @@ const ALL_MODEL_DEFINITIONS: OpencodeModelDefinitions = {
         low: { disabled: true },
         high: { disabled: true },
       },
-      minPlan: 'pro',
+      minPlan: 'free',
     },
   ),
   'antigravity-claude-sonnet-5-5-thinking': defineModel(
