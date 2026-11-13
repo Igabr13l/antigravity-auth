@@ -8,11 +8,57 @@
  */
 
 import * as crypto from 'node:crypto'
+import * as fs from 'node:fs'
 
 // Keep in sync with current Antigravity releases: daily-cloudcode-pa.googleapis.com
 // gates newer models (e.g., gemini-4-hydrogen-*, gemini-4-argon-*) behind this version
 // and returns 404 NOT_FOUND if AGY_CLI_VERSION is too old.
-export const AGY_CLI_VERSION = '2.31.2'
+export const AGY_CLI_VERSION_FALLBACK = '2.31.2'
+const MACOS_ANTIGRAVITY_INFO_PLIST =
+  '/Applications/Antigravity.app/Contents/Info.plist'
+
+export interface ResolveAgyCliVersionOptions {
+  env?: Record<string, string | undefined>
+  platform?: string
+  infoPlistPath?: string
+}
+
+/**
+ * Resolve the Antigravity CLI version sent in `User-Agent`:
+ * 1. `AGY_CLI_VERSION` environment override
+ * 2. Local macOS `/Applications/Antigravity.app/Contents/Info.plist` (`CFBundleShortVersionString`)
+ * 3. `AGY_CLI_VERSION_FALLBACK`
+ */
+export function resolveAgyCliVersion(
+  options: ResolveAgyCliVersionOptions = {},
+): string {
+  const env = options.env ?? process.env
+  const envOverride = env.AGY_CLI_VERSION?.trim()
+  if (envOverride) {
+    return envOverride
+  }
+
+  const platform = options.platform ?? process.platform
+  if (platform === 'darwin') {
+    const plistPath = options.infoPlistPath ?? MACOS_ANTIGRAVITY_INFO_PLIST
+    try {
+      const plist = fs.readFileSync(plistPath, 'utf8')
+      const match = plist.match(
+        /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]+)<\/string>/,
+      )
+      const version = match?.[1]?.trim()
+      if (version) {
+        return version
+      }
+    } catch {
+      // Fallback when Antigravity.app is not installed or unreadable
+    }
+  }
+
+  return AGY_CLI_VERSION_FALLBACK
+}
+
+export const AGY_CLI_VERSION = resolveAgyCliVersion()
 export const AGY_CLI_CHANGE_LIST = '974782877'
 const ANTIGRAVITY_API_CLIENT = 'antigravity-cli'
 

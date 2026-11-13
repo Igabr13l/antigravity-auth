@@ -69,16 +69,15 @@ console.log(
 )
 
 if (existsSync(CORE_DIST)) {
-  if (existsSync(CORE_TARGET)) {
-    const coreDistTarget = join(CORE_TARGET, 'dist')
-    rmSync(coreDistTarget, { recursive: true, force: true })
-    cpSync(CORE_DIST, coreDistTarget, { recursive: true })
-    console.log(`Synced @cortexkit/antigravity-auth-core into ${CORE_TARGET}`)
-  } else {
-    console.warn(
-      `[install-local] @cortexkit/antigravity-auth-core not found at ${CORE_TARGET} — the host may be running a stale core. Run \`bun run install:local\` from the core package first.`,
-    )
+  mkdirSync(CORE_TARGET, { recursive: true })
+  const corePkg = join(CORE_ROOT, 'package.json')
+  if (existsSync(corePkg)) {
+    copyFileSync(corePkg, join(CORE_TARGET, 'package.json'))
   }
+  const coreDistTarget = join(CORE_TARGET, 'dist')
+  rmSync(coreDistTarget, { recursive: true, force: true })
+  cpSync(CORE_DIST, coreDistTarget, { recursive: true })
+  console.log(`Synced @cortexkit/antigravity-auth-core into ${CORE_TARGET}`)
 }
 
 console.log('Restart OpenCode (or wait for the plugin watcher) to load it.')

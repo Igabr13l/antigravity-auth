@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'bun:test'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import {
+  AGY_CLI_VERSION_FALLBACK,
   buildAntigravityHarnessBootstrapHeaders,
   buildAntigravityHarnessLoadCodeAssistUserAgent,
   buildAntigravityHarnessPlatformArch,
@@ -10,6 +14,7 @@ import {
   generateFingerprint,
   getSessionFingerprint,
   regenerateSessionFingerprint,
+  resolveAgyCliVersion,
   updateFingerprintVersion,
 } from './fingerprint.ts'
 
@@ -131,6 +136,61 @@ describe('Antigravity fingerprint', () => {
       clearSessionFingerprint()
       const fresh = getSessionFingerprint()
       expect(fresh).not.toBe(original)
+    })
+  })
+
+  describe('resolveAgyCliVersion', () => {
+    it('prefers AGY_CLI_VERSION env override when set', () => {
+      expect(
+        resolveAgyCliVersion({
+          env: { AGY_CLI_VERSION: '2.99.0' },
+          platform: 'darwin',
+          infoPlistPath: '/nonexistent/Info.plist',
+        }),
+      ).toBe('2.99.0')
+    })
+
+    it('reads CFBundleShortVersionString from macOS Info.plist when present', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'agy-plist-'))
+      try {
+        const plistPath = join(dir, 'Info.plist')
+        writeFileSync(
+          plistPath,
+          `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>CFBundleShortVersionString</key>
+  <string>2.42.1</string>
+</dict>
+</plist>`,
+        )
+        expect(
+          resolveAgyCliVersion({
+            env: {},
+            platform: 'darwin',
+            infoPlistPath: plistPath,
+          }),
+        ).toBe('2.42.1')
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
+    it('falls back to AGY_CLI_VERSION_FALLBACK when plist is absent or non-darwin', () => {
+      expect(
+        resolveAgyCliVersion({
+          env: {},
+          platform: 'linux',
+          infoPlistPath: '/nonexistent/Info.plist',
+        }),
+      ).toBe(AGY_CLI_VERSION_FALLBACK)
+      expect(
+        resolveAgyCliVersion({
+          env: {},
+          platform: 'darwin',
+          infoPlistPath: '/nonexistent/Info.plist',
+        }),
+      ).toBe(AGY_CLI_VERSION_FALLBACK)
     })
   })
 })
