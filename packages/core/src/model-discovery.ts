@@ -44,6 +44,13 @@ export function discoverModelsFromApiResponse(
     let variants: Record<string, ModelVariant> | undefined
     if (isClaude) {
       variants = { low: { disabled: true }, high: { disabled: true } }
+    } else if (lower.includes('hydrogen')) {
+      variants = {
+        low: { thinkingLevel: 'low' },
+        medium: { thinkingLevel: 'medium' },
+        high: { thinkingLevel: 'high' },
+        xhigh: { thinkingLevel: 'xhigh' },
+      }
     } else if (isFlash) {
       variants = {
         minimal: { thinkingLevel: 'minimal' },

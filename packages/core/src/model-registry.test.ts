@@ -5,6 +5,7 @@ import {
   getClaudeSonnet55Model,
   getGemini4ArgonAntigravityModel,
   getGemini4CarbonAntigravityModel,
+  getGemini4HydrogenAntigravityModel,
   getGemini35FlashAntigravityModel,
   getGemini35FlashGeminiCliFallbackModel,
   getGemini36FlashAntigravityModel,
@@ -47,6 +48,7 @@ describe('model registry', () => {
       'antigravity-gemini-3.8-flash',
       'antigravity-gemini-4-argon',
       'antigravity-gemini-4-carbon',
+      'antigravity-gemini-4-hydrogen',
       'antigravity-gpt-oss-120b-medium',
     ])
 
@@ -114,6 +116,7 @@ describe('model registry', () => {
     const sonnet55 = definitions['antigravity-claude-sonnet-5-5-thinking']
     const argon = definitions['antigravity-gemini-4-argon']
     const carbon = definitions['antigravity-gemini-4-carbon']
+    const hydrogen = definitions['antigravity-gemini-4-hydrogen']
 
     expect(opus?.name).toBe('Claude Opus 4.6 Thinking (Antigravity)')
     expect(opus?.variants).toEqual({
@@ -156,6 +159,26 @@ describe('model registry', () => {
 
     expect(carbon?.name).toBe('Gemini 4 Carbon (Antigravity)')
     expect(getGemini4CarbonAntigravityModel()).toBe('gemini-4-carbon-high')
+    expect(hydrogen?.name).toBe('Gemini 4 Hydrogen (Antigravity)')
+    expect(hydrogen?.variants).toEqual({
+      low: { thinkingLevel: 'low' },
+      medium: { thinkingLevel: 'medium' },
+      high: { thinkingLevel: 'high' },
+      xhigh: { thinkingLevel: 'xhigh' },
+    })
+    expect(getGemini4HydrogenAntigravityModel()).toBe('gemini-4-hydrogen-high')
+    expect(getGemini4HydrogenAntigravityModel('low')).toBe(
+      'gemini-4-hydrogen-low',
+    )
+    expect(getGemini4HydrogenAntigravityModel('medium')).toBe(
+      'gemini-4-hydrogen-medium',
+    )
+    expect(getGemini4HydrogenAntigravityModel('high')).toBe(
+      'gemini-4-hydrogen-high',
+    )
+    expect(getGemini4HydrogenAntigravityModel('xhigh')).toBe(
+      'gemini-4-hydrogen-xhigh',
+    )
     expect(getClaudeOpus55Model()).toBe('claude-opus-5-5-medium')
     expect(getClaudeSonnet55Model()).toBe('claude-sonnet-5-5-medium')
   })
@@ -229,6 +252,7 @@ describe('model registry', () => {
   it('annotates model definitions with minimum plan tier requirements', () => {
     const definitions = getPublicModelDefinitions()
     expect(definitions['antigravity-gemini-4-carbon']?.minPlan).toBe('ultra')
+    expect(definitions['antigravity-gemini-4-hydrogen']?.minPlan).toBe('free')
     expect(definitions['antigravity-claude-opus-5-5-thinking']?.minPlan).toBe(
       'pro',
     )
@@ -284,6 +308,11 @@ describe('model registry', () => {
     expect(getQuotaGroupForModel('gemini-4-argon-high')).toBe('argon')
     expect(getQuotaGroupForModel('antigravity-gemini-4-argon')).toBe('argon')
     expect(getQuotaGroupForModel('gemini-4-carbon')).toBe('gemini')
+    expect(getQuotaGroupForModel('gemini-4-hydrogen')).toBe('gemini')
+    expect(getQuotaGroupForModel('gemini-4-hydrogen-xhigh')).toBe('gemini')
+    expect(getQuotaGroupForModel('antigravity-gemini-4-hydrogen')).toBe(
+      'gemini',
+    )
     expect(getQuotaGroupForModel('gemini-3.8-flash')).toBe('gemini')
     expect(getQuotaGroupForModel('claude-opus-4-6-thinking')).toBe('non-gemini')
     expect(getQuotaGroupForModel('gpt-oss-120b-medium')).toBe('non-gemini')
@@ -295,6 +324,7 @@ describe('model registry', () => {
     expect(isAntigravityOnlyModel('gpt-oss-120b-medium')).toBe(true)
     expect(isAntigravityOnlyModel('gemini-4-argon-high')).toBe(true)
     expect(isAntigravityOnlyModel('gemini-4-carbon-low')).toBe(true)
+    expect(isAntigravityOnlyModel('gemini-4-hydrogen-xhigh')).toBe(true)
     expect(isAntigravityOnlyModel('gemini-3.1-flash-image')).toBe(true)
     expect(isAntigravityOnlyModel('tab_flash_lite_preview')).toBe(true)
 

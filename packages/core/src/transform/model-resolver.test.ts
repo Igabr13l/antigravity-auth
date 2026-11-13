@@ -193,6 +193,31 @@ describe('resolveModelWithTier', () => {
         'medium',
       ],
       ['antigravity-gemini-4-carbon-high', 'gemini-4-carbon-high', -1, 'high'],
+      ['antigravity-gemini-4-hydrogen', 'gemini-4-hydrogen-high', -1, 'high'],
+      [
+        'antigravity-gemini-4-hydrogen-low',
+        'gemini-4-hydrogen-low',
+        1000,
+        'low',
+      ],
+      [
+        'antigravity-gemini-4-hydrogen-medium',
+        'gemini-4-hydrogen-medium',
+        4000,
+        'medium',
+      ],
+      [
+        'antigravity-gemini-4-hydrogen-high',
+        'gemini-4-hydrogen-high',
+        -1,
+        'high',
+      ],
+      [
+        'antigravity-gemini-4-hydrogen-xhigh',
+        'gemini-4-hydrogen-xhigh',
+        -1,
+        'xhigh',
+      ],
     ])('maps %s to the captured AGY route', (requestedModel, actualModel, thinkingBudget, tier) => {
       const result = resolveModelWithTier(requestedModel)
       expect(result.actualModel).toBe(actualModel)

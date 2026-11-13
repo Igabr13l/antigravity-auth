@@ -324,7 +324,8 @@ export function resolvePiAntigravityModel(
   const lower = model.id.toLowerCase()
   const supportsAgyTiers =
     model.reasoning &&
-    (lower.includes('gemini-3') ||
+    (lower.includes('gemini-4') ||
+      lower.includes('gemini-3') ||
       (lower.includes('claude') && lower.includes('thinking')))
 
   if (!supportsAgyTiers || !reasoning) {
@@ -332,7 +333,11 @@ export function resolvePiAntigravityModel(
   }
 
   const tier =
-    reasoning === 'minimal' ? 'low' : reasoning === 'xhigh' ? 'high' : reasoning
+    reasoning === 'minimal'
+      ? 'low'
+      : reasoning === 'xhigh' && !lower.includes('gemini-4-hydrogen')
+        ? 'high'
+        : reasoning
   const baseModel = model.id.replace(/-(minimal|low|medium|high|xhigh)$/i, '')
   return resolveModelForHeaderStyle(`${baseModel}-${tier}`, 'antigravity')
 }

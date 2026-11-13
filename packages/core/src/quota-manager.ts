@@ -618,7 +618,8 @@ function isArgonRuqsGroup(group?: {
   return (
     !description.includes('flash') &&
     !description.includes('pro') &&
-    !description.includes('carbon')
+    !description.includes('carbon') &&
+    !description.includes('hydrogen')
   )
 }
 

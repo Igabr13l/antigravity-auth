@@ -19,6 +19,14 @@
           "limit": { "context": 1048576, "output": 65536 },
           "variants": [{ "id": "low" }, { "id": "medium" }, { "id": "high" }]
         },
+        "gemini-4-hydrogen": {
+          "name": "Gemini 4 Hydrogen",
+          "modelID": "gemini-4-hydrogen",
+          "package": "@opencode-ai/ai/providers/google",
+          "capabilities": { "tools": true, "input": ["text", "image", "pdf"], "output": ["text"] },
+          "limit": { "context": 1048576, "output": 65536 },
+          "variants": [{ "id": "low" }, { "id": "medium" }, { "id": "high" }, { "id": "xhigh" }]
+        },
         "gemini-3.8-flash": {
           "name": "Gemini 3.8 Flash",
           "modelID": "gemini-3.8-flash",

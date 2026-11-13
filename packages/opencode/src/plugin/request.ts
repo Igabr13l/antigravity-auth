@@ -210,7 +210,11 @@ function getAgyMaxOutputTokens(model: string): number | undefined {
     lower === 'gemini-4-argon-high' ||
     lower === 'gemini-4-carbon-low' ||
     lower === 'gemini-4-carbon-medium' ||
-    lower === 'gemini-4-carbon-high'
+    lower === 'gemini-4-carbon-high' ||
+    lower === 'gemini-4-hydrogen-low' ||
+    lower === 'gemini-4-hydrogen-medium' ||
+    lower === 'gemini-4-hydrogen-high' ||
+    lower === 'gemini-4-hydrogen-xhigh'
   ) {
     return 65536
   }
@@ -1460,7 +1464,7 @@ export function prepareAntigravityRequest(
         // Strip tier suffix from model for cache key to prevent cache misses on tier change
         // e.g., "claude-opus-4-6-thinking-high" -> "claude-opus-4-6-thinking"
         const modelForCacheKey = effectiveModel.replace(
-          /-(minimal|low|medium|high)$/i,
+          /-(minimal|low|medium|high|xhigh)$/i,
           '',
         )
         signatureSessionKey = buildSignatureSessionKey(
@@ -1644,7 +1648,7 @@ export function prepareAntigravityRequest(
           const variantModelBase = rawModel
             .replace(/-preview-customtools$/i, '')
             .replace(/-preview$/i, '')
-            .replace(/-(minimal|low|medium|high)$/i, '')
+            .replace(/-(minimal|low|medium|high|xhigh)$/i, '')
           const variantResolved = resolveModelForHeaderStyle(
             `${variantModelBase}-${variantConfig.thinkingLevel}`,
             headerStyle,
@@ -1681,7 +1685,7 @@ export function prepareAntigravityRequest(
                   ? 'medium'
                   : 'high'
             const variantResolved = resolveModelForHeaderStyle(
-              `${rawModel.replace(/-(minimal|low|medium|high)$/i, '')}-${claudeTier}`,
+              `${rawModel.replace(/-(minimal|low|medium|high|xhigh)$/i, '')}-${claudeTier}`,
               headerStyle,
             )
             effectiveModel = variantResolved.actualModel

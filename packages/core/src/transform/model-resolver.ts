@@ -10,6 +10,7 @@ import {
   getClaudeSonnet55Model,
   getGemini4ArgonAntigravityModel,
   getGemini4CarbonAntigravityModel,
+  getGemini4HydrogenAntigravityModel,
   getGemini35FlashAntigravityModel,
   getGemini35FlashGeminiCliFallbackModel,
   getGemini36FlashAntigravityModel,
@@ -33,10 +34,28 @@ export interface ModelResolverOptions {
  * Claude and Gemini 2.5 Pro use numeric budgets.
  */
 export const THINKING_TIER_BUDGETS = {
-  claude: { minimal: 1024, low: 8192, medium: 16384, high: 32768 },
-  'gemini-2.5-pro': { minimal: 1024, low: 8192, medium: 16384, high: 32768 },
-  'gemini-2.5-flash': { minimal: 512, low: 6144, medium: 12288, high: 24576 },
-  default: { minimal: 512, low: 4096, medium: 8192, high: 16384 },
+  claude: {
+    minimal: 1024,
+    low: 8192,
+    medium: 16384,
+    high: 32768,
+    xhigh: 32768,
+  },
+  'gemini-2.5-pro': {
+    minimal: 1024,
+    low: 8192,
+    medium: 16384,
+    high: 32768,
+    xhigh: 32768,
+  },
+  'gemini-2.5-flash': {
+    minimal: 512,
+    low: 6144,
+    medium: 12288,
+    high: 24576,
+    xhigh: 24576,
+  },
+  default: { minimal: 512, low: 4096, medium: 8192, high: 16384, xhigh: 16384 },
 } as const
 
 /**
@@ -60,7 +79,7 @@ export const GEMINI_3_THINKING_LEVELS = [
  * - Claude non-thinking: claude-{model} (no -thinking suffix)
  */
 export const MODEL_ALIASES: Record<string, string> = getResolverAliasMap()
-const TIER_REGEX = /-(minimal|low|medium|high)$/
+const TIER_REGEX = /-(minimal|low|medium|high|xhigh)$/
 const QUOTA_PREFIX_REGEX = /^antigravity-/i
 const GEMINI_3_PRO_REGEX = /^gemini-3(?:\.\d+)?-pro/i
 const GEMINI_3_FLASH_REGEX = /^gemini-3(?:\.\d+)?-flash/i
@@ -160,6 +179,7 @@ function getAgyGeminiFlashThinkingBudget(
     case 'low':
       return 1000
     case 'high':
+    case 'xhigh':
       return highBudget
     default:
       return 4000
@@ -234,6 +254,7 @@ export function resolveModelWithTier(
   const isGemini38Flash = /^gemini-3\.8-flash/i.test(baseName)
   const isGemini4Argon = /^gemini-4-argon/i.test(baseName)
   const isGemini4Carbon = /^gemini-4-carbon/i.test(baseName)
+  const isGemini4Hydrogen = /^gemini-4-hydrogen/i.test(baseName)
   const isGptOss120b = /^gpt-oss-120b(?:-medium)?$/i.test(baseName)
 
   if (isGemini4Argon && quotaPreference === 'antigravity') {
@@ -250,6 +271,17 @@ export function resolveModelWithTier(
   if (isGemini4Carbon && quotaPreference === 'antigravity') {
     return {
       actualModel: getGemini4CarbonAntigravityModel(tier ?? 'high'),
+      thinkingBudget: getAgyGeminiFlashThinkingBudget(tier ?? 'high', -1),
+      tier: tier ?? 'high',
+      isThinkingModel: true,
+      quotaPreference,
+      explicitQuota,
+    }
+  }
+
+  if (isGemini4Hydrogen && quotaPreference === 'antigravity') {
+    return {
+      actualModel: getGemini4HydrogenAntigravityModel(tier ?? 'high'),
       thinkingBudget: getAgyGeminiFlashThinkingBudget(tier ?? 'high', -1),
       tier: tier ?? 'high',
       isThinkingModel: true,
@@ -360,12 +392,16 @@ export function resolveModelWithTier(
   if (claude55Match && quotaPreference === 'antigravity') {
     const family = claude55Match[1]!.toLowerCase()
     const rawSuffix = resolvedModel.match(TIER_REGEX)?.[1]
-    // Claude 5.5 wire models use low/medium/high — no minimal tier.
+    // Claude 5.5 wire models use low/medium/high — no minimal or xhigh tier.
     const suffixTier: ThinkingTier | undefined =
       rawSuffix === 'minimal'
         ? 'medium'
-        : (rawSuffix as ThinkingTier | undefined)
-    const selectedTier: ThinkingTier = tier ?? suffixTier ?? 'medium'
+        : rawSuffix === 'xhigh'
+          ? 'high'
+          : (rawSuffix as ThinkingTier | undefined)
+    const normalizedTier: ThinkingTier | undefined =
+      tier === 'xhigh' ? 'high' : tier
+    const selectedTier: ThinkingTier = normalizedTier ?? suffixTier ?? 'medium'
     return {
       actualModel:
         family === 'sonnet'
@@ -513,7 +549,9 @@ export function resolveModelForHeaderStyle(
 
     const isGemini3Pro = isGemini3ProModel(transformedModel)
     const isGemini3Flash = isGemini3FlashModel(transformedModel)
-    const hasTierSuffix = /-(minimal|low|medium|high)$/i.test(transformedModel)
+    const hasTierSuffix = /-(minimal|low|medium|high|xhigh)$/i.test(
+      transformedModel,
+    )
     const isImageModel = IMAGE_GENERATION_MODELS.test(transformedModel)
     const isGemini35Flash = isGemini35FlashModel(
       transformedModel.replace(TIER_REGEX, ''),
@@ -539,7 +577,7 @@ export function resolveModelForHeaderStyle(
     )
     let transformedModel = requestedModel
       .replace(/^antigravity-/i, '')
-      .replace(/-(minimal|low|medium|high)$/i, '')
+      .replace(/-(minimal|low|medium|high|xhigh)$/i, '')
 
     const hasPreviewSuffix = /-preview($|-)/i.test(transformedModel)
     // Gemini Code Assist still exposes Gemini 3.5 Flash through the

@@ -1284,6 +1284,7 @@ describe('argon quota pool separation', () => {
     expect(classifyQuotaGroup('gemini-4-argon', 'Gemini 4 Argon')).toBe('argon')
     expect(classifyQuotaGroup('gemini-3.8-flash-high')).toBe('gemini')
     expect(classifyQuotaGroup('gemini-4-carbon-high')).toBe('gemini')
+    expect(classifyQuotaGroup('gemini-4-hydrogen-xhigh')).toBe('gemini')
     expect(classifyQuotaGroup('claude-sonnet-4-6')).toBe('non-gemini')
   })
 

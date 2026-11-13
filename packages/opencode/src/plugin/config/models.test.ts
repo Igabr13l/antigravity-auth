@@ -27,6 +27,7 @@ describe('OPENCODE_MODEL_DEFINITIONS', () => {
       'antigravity-gemini-3.8-flash',
       'antigravity-gemini-4-argon',
       'antigravity-gemini-4-carbon',
+      'antigravity-gemini-4-hydrogen',
       'antigravity-gpt-oss-120b-medium',
     ])
   })
@@ -36,6 +37,13 @@ describe('OPENCODE_MODEL_DEFINITIONS', () => {
       low: { thinkingLevel: 'low' },
       medium: { thinkingLevel: 'medium' },
       high: { thinkingLevel: 'high' },
+    })
+
+    expect(getModel('antigravity-gemini-4-hydrogen').variants).toEqual({
+      low: { thinkingLevel: 'low' },
+      medium: { thinkingLevel: 'medium' },
+      high: { thinkingLevel: 'high' },
+      xhigh: { thinkingLevel: 'xhigh' },
     })
 
     expect(getModel('antigravity-gemini-3.1-pro').variants).toEqual({

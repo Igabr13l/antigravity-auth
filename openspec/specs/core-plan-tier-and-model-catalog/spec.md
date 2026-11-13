@@ -100,7 +100,8 @@ definitions: `minimal`, `low`, `medium`, and `high`.
 Gemini 4 Argon (`antigravity-gemini-4-argon`), Gemini 4 Carbon (`antigravity-gemini-4-carbon`),
 Claude Opus 5.5 (`antigravity-claude-opus-5-5-thinking`), Claude Sonnet 5.5 (`antigravity-claude-sonnet-5-5-thinking`),
 and Gemini 3.1 Pro SHALL expose `low`, `medium`, and `high` variants.
-The model resolver SHALL support `-minimal`, `-low`, `-medium`, and `-high`
+Gemini 4 Hydrogen (`antigravity-gemini-4-hydrogen`) SHALL expose `low`, `medium`, `high`, and `xhigh` variants (`minPlan: "free"`, `gemini` quota pool).
+The model resolver SHALL support `-minimal`, `-low`, `-medium`, `-high`, and `-xhigh`
 tier suffixes across all Gemini 3/4 and Claude 5.5 thinking models.
 
 #### Scenario: Flash 3.8 variants inspection

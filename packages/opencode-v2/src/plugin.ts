@@ -256,6 +256,7 @@ function log(...args: unknown[]): void {
 export const ROUTABLE_MODEL_IDS: ReadonlySet<string> = new Set([
   'gemini-4-argon',
   'gemini-4-carbon',
+  'gemini-4-hydrogen',
   'gemini-3.8-flash',
   'gemini-3.7-flash',
   'gemini-3.6-flash',

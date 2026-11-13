@@ -2,7 +2,7 @@ import type { ProviderModel } from './model-types.ts'
 import { getMinimumPlanForModel, type PlanTier } from './plan-tier.ts'
 import type { ThinkingTier } from './transform/types.ts'
 
-export type ModelThinkingLevel = 'minimal' | 'low' | 'medium' | 'high'
+export type ModelThinkingLevel = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
 export interface ModelThinkingConfig {
   thinkingBudget: number
@@ -112,6 +112,13 @@ const ARGON_CARBON_VARIANTS: Record<string, ModelVariant> = {
   high: { thinkingLevel: 'high' },
 }
 
+const HYDROGEN_VARIANTS: Record<string, ModelVariant> = {
+  low: { thinkingLevel: 'low' },
+  medium: { thinkingLevel: 'medium' },
+  high: { thinkingLevel: 'high' },
+  xhigh: { thinkingLevel: 'xhigh' },
+}
+
 const CLAUDE_55_VARIANTS: Record<string, ModelVariant> = {
   low: { thinkingConfig: { thinkingBudget: 8192 } },
   medium: { thinkingConfig: { thinkingBudget: 16384 } },
@@ -135,6 +142,17 @@ const ALL_MODEL_DEFINITIONS: OpencodeModelDefinitions = {
     variants: ARGON_CARBON_VARIANTS,
     minPlan: 'ultra',
   }),
+  'antigravity-gemini-4-hydrogen': defineModel(
+    'antigravity-gemini-4-hydrogen',
+    {
+      name: 'Gemini 4 Hydrogen (Antigravity)',
+      reasoning: true,
+      limit: { context: 1048576, output: 65536 },
+      modalities: DEFAULT_MODALITIES,
+      variants: HYDROGEN_VARIANTS,
+      minPlan: 'free',
+    },
+  ),
   'antigravity-gemini-3.1-pro': defineModel('antigravity-gemini-3.1-pro', {
     name: 'Gemini 3.1 Pro (Antigravity)',
     reasoning: true,
@@ -319,6 +337,11 @@ const RESOLVER_ALIASES: Record<string, string> = {
   'gemini-4-carbon-low': 'gemini-4-carbon',
   'gemini-4-carbon-medium': 'gemini-4-carbon',
   'gemini-4-carbon-high': 'gemini-4-carbon',
+  'gemini-4-hydrogen-minimal': 'gemini-4-hydrogen',
+  'gemini-4-hydrogen-low': 'gemini-4-hydrogen',
+  'gemini-4-hydrogen-medium': 'gemini-4-hydrogen',
+  'gemini-4-hydrogen-high': 'gemini-4-hydrogen',
+  'gemini-4-hydrogen-xhigh': 'gemini-4-hydrogen',
   'gemini-3.1-pro-low': 'gemini-3.1-pro',
   'gemini-3.1-pro-medium': 'gemini-3.1-pro',
   'gemini-3.1-pro-high': 'gemini-3.1-pro',
@@ -423,6 +446,17 @@ const GEMINI_4_CARBON_ROUTES: AntigravityTieredRouteMetadata = {
   },
 }
 
+const GEMINI_4_HYDROGEN_ROUTES: AntigravityTieredRouteMetadata = {
+  defaultModel: 'gemini-4-hydrogen-high',
+  byTier: {
+    minimal: 'gemini-4-hydrogen-low',
+    low: 'gemini-4-hydrogen-low',
+    medium: 'gemini-4-hydrogen-medium',
+    high: 'gemini-4-hydrogen-high',
+    xhigh: 'gemini-4-hydrogen-xhigh',
+  },
+}
+
 const CLAUDE_OPUS_55_ROUTES: AntigravityTieredRouteMetadata = {
   defaultModel: 'claude-opus-5-5-medium',
   byTier: {
@@ -468,6 +502,12 @@ const QUOTA_GROUP_BY_MODEL_ID: Record<string, ModelQuotaGroup> = {
   'gemini-4-carbon-low': 'gemini',
   'gemini-4-carbon-medium': 'gemini',
   'gemini-4-carbon-high': 'gemini',
+  'gemini-4-hydrogen': 'gemini',
+  'gemini-4-hydrogen-minimal': 'gemini',
+  'gemini-4-hydrogen-low': 'gemini',
+  'gemini-4-hydrogen-medium': 'gemini',
+  'gemini-4-hydrogen-high': 'gemini',
+  'gemini-4-hydrogen-xhigh': 'gemini',
   'gemini-pro-agent': 'gemini',
   'gemini-3.1-pro': 'gemini',
   'gemini-3.1-pro-low': 'gemini',
@@ -501,6 +541,7 @@ const QUOTA_GROUP_BY_MODEL_ID: Record<string, ModelQuotaGroup> = {
 const ANTIGRAVITY_OPENCODE_MODEL_IDS = [
   'antigravity-gemini-4-argon',
   'antigravity-gemini-4-carbon',
+  'antigravity-gemini-4-hydrogen',
   'antigravity-gemini-3.8-flash',
   'antigravity-gemini-3.7-flash',
   'antigravity-gemini-3.6-flash',
@@ -595,6 +636,12 @@ export function getGemini4CarbonAntigravityModel(tier?: ThinkingTier): string {
   return getTieredAntigravityModel(GEMINI_4_CARBON_ROUTES, tier)
 }
 
+export function getGemini4HydrogenAntigravityModel(
+  tier?: ThinkingTier,
+): string {
+  return getTieredAntigravityModel(GEMINI_4_HYDROGEN_ROUTES, tier)
+}
+
 /** Wire model for Claude Opus 5.5, tiered low/medium/high (default medium). */
 export function getClaudeOpus55Model(tier?: ThinkingTier): string {
   return getTieredAntigravityModel(CLAUDE_OPUS_55_ROUTES, tier)
@@ -608,7 +655,7 @@ export function getClaudeSonnet55Model(tier?: ThinkingTier): string {
 export function getQuotaGroupForModel(
   modelId: string,
 ): ModelQuotaGroup | undefined {
-  const normalized = modelId.toLowerCase()
+  const normalized = modelId.toLowerCase().replace(/^antigravity-/, '')
   return (
     QUOTA_GROUP_BY_MODEL_ID[normalized] ??
     // Check Claude / GPT-OSS substrings BEFORE the `gemini` substring so
