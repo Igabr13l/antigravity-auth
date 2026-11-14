@@ -366,6 +366,10 @@ export function mergeAccountStorage(
         (existingAcc.eligibilityStateUpdatedAt ?? 0)
           ? acc
           : existingAcc
+      const tierSource =
+        (acc.capturedTierAt ?? 0) >= (existingAcc.capturedTierAt ?? 0)
+          ? acc
+          : existingAcc
       const merged: AccountMetadataV3 = {
         ...existingAcc,
         ...acc,
@@ -376,6 +380,10 @@ export function mergeAccountStorage(
           ...acc.rateLimitResetTimes,
         },
         lastUsed: Math.max(existingAcc.lastUsed || 0, acc.lastUsed || 0),
+        capturedTierId: tierSource.capturedTierId,
+        capturedPaidTierId: tierSource.capturedPaidTierId,
+        capturedTierAt: tierSource.capturedTierAt,
+        capturedTierSchemaVersion: tierSource.capturedTierSchemaVersion,
         accountIneligible: eligibilitySource.accountIneligible,
         accountIneligibleAt: eligibilitySource.accountIneligibleAt,
         accountIneligibleReason: eligibilitySource.accountIneligibleReason,

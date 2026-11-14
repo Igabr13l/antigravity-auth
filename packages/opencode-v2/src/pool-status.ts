@@ -340,6 +340,44 @@ const SIDEBAR_GLYPH: Record<AccountState, string> = {
 }
 
 /**
+ * Reconcile a persisted plan tier against live quota groups when the account
+ * already has a known tier on disk (`!== 'unknown'`).
+ *
+ * - An `argon` quota bucket is only provisioned for Pro/Ultra accounts, so a
+ *   stored `free` or `plus` tier is promoted to `pro` immediately when `argon`
+ *   appears in the live quota response.
+ * - Conversely, a live windowed quota with only `weekly` windows (no `5h`
+ *   window and no `argon` group) is the Antigravity Starter Quota shape, so a
+ *   stale `pro` or `plus` tier is demoted to `free`.
+ */
+export function reconcilePlanTierWithQuota(
+  currentTier: PlanTier | undefined,
+  quota: QuotaGroups | undefined,
+): PlanTier | undefined {
+  if (!quota || !currentTier || currentTier === 'unknown') {
+    return currentTier
+  }
+  if (quota.argon !== undefined) {
+    if (currentTier === 'free' || currentTier === 'plus') {
+      return 'pro'
+    }
+    return currentTier
+  }
+  const windows = [
+    ...(quota.gemini?.windows ?? []),
+    ...(quota['non-gemini']?.windows ?? []),
+  ]
+  if (
+    windows.length > 0 &&
+    !windows.some((entry) => entry.window === '5h') &&
+    (currentTier === 'pro' || currentTier === 'plus')
+  ) {
+    return 'free'
+  }
+  return currentTier
+}
+
+/**
  * Pure merge of cached quota aggregates into a summarized pool. Quota is
  * fetched out-of-band (network, cached in memory) and joined by the stable
  * account key, so a quota snapshot can never re-order or re-identify accounts.
@@ -353,7 +391,12 @@ export function attachQuota(
     ...status,
     accounts: status.accounts.map((account) => {
       const quota = quotaByKey.get(account.key)
-      return quota ? { ...account, quota } : account
+      if (!quota) return account
+      return {
+        ...account,
+        quota,
+        planTier: reconcilePlanTierWithQuota(account.planTier, quota),
+      }
     }),
   }
 }
@@ -714,7 +757,8 @@ export function sidebarRows(
       family === 'gemini'
         ? activeFamilies.includes('gemini')
         : family === 'argon'
-          ? activeFamilies.includes('argon')
+          ? activeFamilies.includes('argon') ||
+            activeFamilies.includes('gemini')
           : activeFamilies.includes('claude') ||
             activeFamilies.includes('non-gemini')
 

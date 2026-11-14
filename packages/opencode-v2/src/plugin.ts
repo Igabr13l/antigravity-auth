@@ -141,7 +141,7 @@ interface SendInput {
   kind: SessionRequestKind
 }
 
-const TIER_CAPTURE_TTL_MS = 24 * 60 * 60 * 1000
+const TIER_CAPTURE_TTL_MS = 15 * 60 * 1000
 
 interface OpenCodeV2Dependencies {
   authorizeAntigravity: typeof authorizeAntigravity
@@ -197,9 +197,7 @@ export function upsertOAuthAccount(
     ...(capturedTier
       ? {
           capturedTierId: capturedTier.id,
-          ...(capturedTier.paidId
-            ? { capturedPaidTierId: capturedTier.paidId }
-            : {}),
+          capturedPaidTierId: capturedTier.paidId ?? capturedTier.id,
           capturedTierAt: capturedTier.capturedAt,
           capturedTierSchemaVersion: 1,
         }
@@ -838,7 +836,7 @@ export function createOpenCodeV2AntigravityPlugin(
       const jobTimers = new Map<string, NodeJS.Timeout>()
       const lastModelBySession = new Map<string, string>()
       const activeControllers = new Set<AbortController>()
-      const tierRefreshInflight = new Map<string, Promise<void>>()
+      const tierRefreshInflight = new Map<string, Promise<boolean>>()
       const registrations: Registration[] = []
 
       let accounts = await loadAccountStorage(ACCOUNTS_FILE).catch((error) => {
@@ -959,14 +957,28 @@ export function createOpenCodeV2AntigravityPlugin(
           target.index,
           {
             capturedTierId: capturedTier.id,
-            ...(capturedTier.paidId
-              ? { capturedPaidTierId: capturedTier.paidId }
-              : {}),
+            capturedPaidTierId: capturedTier.paidId ?? capturedTier.id,
             capturedTierAt: capturedTier.capturedAt,
             capturedTierSchemaVersion: 1,
           },
           target.parts.refreshToken,
         )
+        const updatedTier = resolveAccountPlanTier(target)
+        if (
+          target.enabled !== false &&
+          !target.accountIneligible &&
+          !target.verificationRequired &&
+          (updatedTier === 'plus' ||
+            updatedTier === 'pro' ||
+            updatedTier === 'ultra')
+        ) {
+          for (const family of ['claude', 'gemini'] as const) {
+            const current = manager.getCurrentAccountForFamily(family)
+            if (!current || resolveAccountPlanTier(current) === 'free') {
+              manager.markSwitched(target, 'rotation', family)
+            }
+          }
+        }
         manager.requestSaveToDisk()
       }
 
@@ -982,14 +994,13 @@ export function createOpenCodeV2AntigravityPlugin(
       async function refreshAccountTier(
         target: ManagedAccount,
         accessToken: string,
-      ): Promise<void> {
+      ): Promise<boolean> {
         const key = target.parts.refreshToken
         const existing = tierRefreshInflight.get(key)
         if (existing) {
-          await existing
-          return
+          return existing
         }
-        const task = (async () => {
+        const task = (async (): Promise<boolean> => {
           try {
             const payload = await dependencies.loadManagedProject(
               accessToken,
@@ -998,16 +1009,23 @@ export function createOpenCodeV2AntigravityPlugin(
             const captured = extractCapturedTierFromPayload(payload)
             if (captured) {
               syncAccountCapturedTier(target, captured)
-              log('tier-captured', `#${target.index}`, captured.id)
+              log(
+                'tier-captured',
+                `#${target.index}`,
+                captured.paidId ?? captured.id,
+              )
+              return true
             }
+            return false
           } catch (error) {
             log('tier-capture-error', `#${target.index}`, errorMessage(error))
+            return false
           } finally {
             tierRefreshInflight.delete(key)
           }
         })()
         tierRefreshInflight.set(key, task)
-        await task
+        return task
       }
 
       async function pickResponse(
@@ -1018,6 +1036,7 @@ export function createOpenCodeV2AntigravityPlugin(
         const requested = job.resolved.actualModel
         const identity = { id: job.sessionID ?? 'default', parentId: null }
         const excluded = new Set<number>()
+        const probedIneligible = new Set<number>()
         const poolSize = Math.max(1, manager.getEnabledAccounts().length)
         let failure: unknown = null
 
@@ -1069,17 +1088,31 @@ export function createOpenCodeV2AntigravityPlugin(
           }
 
           if (!isAccountEligibleForModel(account, requested)) {
-            const hasKnownEligiblePeer = manager
-              .getEnabledAccounts()
-              .some(
+            let liveTierProbed = false
+            if (auth.access && !probedIneligible.has(account.index)) {
+              probedIneligible.add(account.index)
+              liveTierProbed = await refreshAccountTier(account, auth.access)
+            }
+            if (!isAccountEligibleForModel(account, requested)) {
+              const enabledPeers = manager
+                .getEnabledAccounts()
+                .filter((peer) => peer.index !== account.index)
+              const hasKnownEligiblePeer = enabledPeers.some(
                 (peer) =>
-                  peer.index !== account.index &&
                   resolveAccountPlanTier(peer) !== 'unknown' &&
                   isAccountEligibleForModel(peer, requested),
               )
-            if (hasKnownEligiblePeer) {
-              excluded.add(account.index)
-              continue
+              const hasUnprobedPeer =
+                liveTierProbed &&
+                enabledPeers.some(
+                  (peer) =>
+                    !excluded.has(peer.index) &&
+                    !probedIneligible.has(peer.index),
+                )
+              if (hasKnownEligiblePeer || hasUnprobedPeer) {
+                excluded.add(account.index)
+                continue
+              }
             }
           }
 

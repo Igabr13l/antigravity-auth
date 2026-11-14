@@ -1163,4 +1163,133 @@ describe('plan tier capture and capacity fallback routing', () => {
       if (cleanup) await cleanup()
     }
   })
+
+  test('probes enabled peers via loadManagedProject when Pro subscription moves to an account with cached free-tier', async () => {
+    const configDir = process.env.OPENCODE_CONFIG_DIR
+    if (!configDir) throw new Error('OPENCODE_CONFIG_DIR is not set')
+    mkdirSync(configDir, { recursive: true })
+    const accountsPath = join(configDir, 'antigravity-accounts.json')
+    const now = Date.now()
+    writeFileSync(
+      accountsPath,
+      JSON.stringify(
+        {
+          version: 4,
+          accounts: [
+            {
+              email: 'still-free@example.test',
+              refreshToken: 'refresh-free',
+              projectId: 'proj-free',
+              managedProjectId: 'proj-free',
+              capturedTierId: 'free-tier',
+              capturedPaidTierId: 'free-tier',
+              capturedTierAt: now,
+              capturedTierSchemaVersion: 1,
+              addedAt: 1,
+              lastUsed: 2,
+              enabled: true,
+              rateLimitResetTimes: {},
+            },
+            {
+              email: 'upgraded-pro@example.test',
+              refreshToken: 'refresh-pro',
+              projectId: 'proj-pro',
+              managedProjectId: 'proj-pro',
+              capturedTierId: 'free-tier',
+              capturedPaidTierId: 'free-tier',
+              capturedTierAt: now,
+              capturedTierSchemaVersion: 1,
+              addedAt: 1,
+              lastUsed: 1,
+              enabled: true,
+              rateLimitResetTimes: {},
+            },
+          ],
+          activeIndex: 0,
+          activeIndexByFamily: { claude: 0, gemini: 0 },
+        },
+        null,
+        2,
+      ),
+    )
+
+    let httpRequestHook: ((event: SessionHttpRequest) => Promise<void>) | null =
+      null
+    const sentTokens: string[] = []
+    const registration = { dispose: async () => undefined }
+
+    const adapter = createOpenCodeV2AntigravityPlugin({
+      refreshAntigravityToken: async (refreshToken) => ({
+        refresh: refreshToken,
+        access: refreshToken === 'refresh-free' ? 'access-free' : 'access-pro',
+        expires: Date.now() + 3_600_000,
+      }),
+      ensureProjectContext: async (auth) => ({
+        auth,
+        effectiveProjectId: 'proj',
+      }),
+      loadManagedProject: async (accessToken) =>
+        accessToken === 'access-pro'
+          ? {
+              currentTier: { id: 'free-tier' },
+              paidTier: { id: 'g1-pro-tier' },
+            }
+          : {
+              currentTier: { id: 'free-tier' },
+              paidTier: { id: 'free-tier' },
+            },
+      send: async ({ auth }) => {
+        sentTokens.push(auth.access ?? '')
+        return successResponse()
+      },
+    })
+
+    const cleanup = await adapter.setup({
+      session: {
+        hook: async (name: string, callback: unknown) => {
+          if (name === 'http.request') {
+            httpRequestHook = callback as (
+              event: SessionHttpRequest,
+            ) => Promise<void>
+          }
+          return registration
+        },
+      },
+      integration: { transform: async () => registration },
+    } as never)
+
+    try {
+      const event = {
+        sessionID: 'pro-transfer-discovery-session',
+        agent: 'build',
+        model: {
+          providerID: 'google',
+          id: 'gemini-4-argon',
+          variant: 'high',
+        },
+        kind: 'chat',
+        request: new Request(
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-4-argon:streamGenerateContent?alt=sse',
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+            }),
+          },
+        ),
+      }
+      await httpRequestHook!(event as never)
+      const response = await fetch(event.request)
+      expect(response.status).toBe(200)
+      expect(sentTokens).toEqual(['access-pro'])
+    } finally {
+      if (cleanup) await cleanup()
+    }
+
+    const persisted = JSON.parse(readFileSync(accountsPath, 'utf8'))
+    expect(persisted.accounts[0]?.capturedPaidTierId).toBe('free-tier')
+    expect(persisted.accounts[1]?.capturedPaidTierId).toBe('g1-pro-tier')
+    expect(persisted.activeIndexByFamily).toEqual({ claude: 1, gemini: 1 })
+  })
 })

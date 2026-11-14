@@ -995,4 +995,92 @@ describe('formatting', () => {
       rows.some((row) => row.text.includes('▸ A') && row.text.includes('0%')),
     ).toBe(true)
   })
+
+  test('reconciles stale planTier with live quota in attachQuota and marks Argon active under gemini family', () => {
+    const status = summarizeAccountPool(
+      pool([
+        {
+          email: 'downgraded@example.test',
+          enabled: true,
+          capturedTierId: 'free-tier',
+          capturedPaidTierId: 'g1-pro-tier',
+        },
+        {
+          email: 'upgraded@example.test',
+          enabled: true,
+          capturedTierId: 'free-tier',
+          capturedPaidTierId: 'free-tier',
+        },
+      ]),
+      NOW,
+    )
+    expect(status.accounts[0]?.planTier).toBe('pro')
+    expect(status.accounts[1]?.planTier).toBe('free')
+
+    const reset = new Date(NOW + 90 * 60_000).toISOString()
+    const withQuota = attachQuota(
+      status,
+      new Map([
+        [
+          status.accounts[0]!.key,
+          {
+            gemini: {
+              remainingFraction: 0.95,
+              modelCount: 2,
+              windows: [
+                { window: 'weekly', remainingFraction: 0.95, resetTime: reset },
+              ],
+            },
+            'non-gemini': {
+              remainingFraction: 0.95,
+              modelCount: 2,
+              windows: [
+                { window: 'weekly', remainingFraction: 0.95, resetTime: reset },
+              ],
+            },
+          },
+        ],
+        [
+          status.accounts[1]!.key,
+          {
+            gemini: {
+              remainingFraction: 0.86,
+              modelCount: 2,
+              windows: [
+                { window: '5h', remainingFraction: 0.86, resetTime: reset },
+                { window: 'weekly', remainingFraction: 0.96, resetTime: reset },
+              ],
+            },
+            argon: {
+              remainingFraction: 0.86,
+              modelCount: 1,
+              windows: [
+                { window: 'weekly', remainingFraction: 0.86, resetTime: reset },
+              ],
+            },
+            'non-gemini': {
+              remainingFraction: 0,
+              modelCount: 2,
+              windows: [
+                { window: '5h', remainingFraction: 1, resetTime: reset },
+                { window: 'weekly', remainingFraction: 0, resetTime: reset },
+              ],
+            },
+          },
+        ],
+      ]),
+    )
+
+    expect(withQuota.accounts[0]?.planTier).toBe('free')
+    expect(withQuota.accounts[1]?.planTier).toBe('pro')
+
+    const upgradedRows = sidebarRows(withQuota.accounts[1]!, NOW, [
+      'claude',
+      'gemini',
+    ])
+    expect(upgradedRows[0]?.plan).toBe('Pro')
+    expect(upgradedRows.some((row) => row.text.startsWith('▸ G 5h'))).toBe(true)
+    expect(upgradedRows.some((row) => row.text.startsWith('▸ A 7d'))).toBe(true)
+    expect(upgradedRows.some((row) => row.text.startsWith('▸ C 5h'))).toBe(true)
+  })
 })
