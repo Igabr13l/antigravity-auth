@@ -1,7 +1,4 @@
 import { describe, expect, it } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 
 import {
   AGY_CLI_VERSION_FALLBACK,
@@ -33,13 +30,11 @@ describe('Antigravity fingerprint', () => {
     })
 
     it('builds the captured agy CLI User-Agent with auth_method=consumer', () => {
-      expect(
-        buildAntigravityHarnessUserAgent('2.31.2', 'darwin', 'arm64'),
-      ).toBe(
-        'antigravity/cli/2.31.2 (aidev_client; os_type=darwin; arch=arm64; cl=974782877; auth_method=consumer)',
+      expect(buildAntigravityHarnessUserAgent('1.3.5', 'darwin', 'arm64')).toBe(
+        'antigravity/cli/1.3.5 (aidev_client; os_type=darwin; arch=arm64; cl=998863838; auth_method=consumer)',
       )
-      expect(buildAntigravityHarnessUserAgent('2.31.2', 'win32', 'x64')).toBe(
-        'antigravity/cli/2.31.2 (aidev_client; os_type=windows; arch=amd64; cl=974782877; auth_method=consumer)',
+      expect(buildAntigravityHarnessUserAgent('1.3.5', 'win32', 'x64')).toBe(
+        'antigravity/cli/1.3.5 (aidev_client; os_type=windows; arch=amd64; cl=998863838; auth_method=consumer)',
       )
     })
 
@@ -56,7 +51,7 @@ describe('Antigravity fingerprint', () => {
 
       expect(headers).toEqual({
         'User-Agent': expect.stringMatching(
-          /^antigravity\/cli\/2\.31\.2 \(aidev_client; os_type=.+; arch=.+; cl=974782877; auth_method=consumer\)$/,
+          /^antigravity\/cli\/1\.3\.5 \(aidev_client; os_type=.+; arch=.+; cl=998863838; auth_method=consumer\)$/,
         ),
         Authorization: 'Bearer token',
         'Content-Type': 'application/json',
@@ -143,54 +138,16 @@ describe('Antigravity fingerprint', () => {
     it('prefers AGY_CLI_VERSION env override when set', () => {
       expect(
         resolveAgyCliVersion({
-          env: { AGY_CLI_VERSION: '2.99.0' },
-          platform: 'darwin',
-          infoPlistPath: '/nonexistent/Info.plist',
+          env: { AGY_CLI_VERSION: '1.5.5' },
         }),
-      ).toBe('2.99.0')
+      ).toBe('1.5.5')
     })
 
-    it('reads CFBundleShortVersionString from macOS Info.plist when present', () => {
-      const dir = mkdtempSync(join(tmpdir(), 'agy-plist-'))
-      try {
-        const plistPath = join(dir, 'Info.plist')
-        writeFileSync(
-          plistPath,
-          `<?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0">
-<dict>
-  <key>CFBundleShortVersionString</key>
-  <string>2.42.1</string>
-</dict>
-</plist>`,
-        )
-        expect(
-          resolveAgyCliVersion({
-            env: {},
-            platform: 'darwin',
-            infoPlistPath: plistPath,
-          }),
-        ).toBe('2.42.1')
-      } finally {
-        rmSync(dir, { recursive: true, force: true })
-      }
-    })
-
-    it('falls back to AGY_CLI_VERSION_FALLBACK when plist is absent or non-darwin', () => {
-      expect(
-        resolveAgyCliVersion({
-          env: {},
-          platform: 'linux',
-          infoPlistPath: '/nonexistent/Info.plist',
-        }),
-      ).toBe(AGY_CLI_VERSION_FALLBACK)
-      expect(
-        resolveAgyCliVersion({
-          env: {},
-          platform: 'darwin',
-          infoPlistPath: '/nonexistent/Info.plist',
-        }),
-      ).toBe(AGY_CLI_VERSION_FALLBACK)
+    it('falls back to AGY_CLI_VERSION_FALLBACK when env override is unset or blank', () => {
+      expect(resolveAgyCliVersion({ env: {} })).toBe(AGY_CLI_VERSION_FALLBACK)
+      expect(resolveAgyCliVersion({ env: { AGY_CLI_VERSION: '   ' } })).toBe(
+        AGY_CLI_VERSION_FALLBACK,
+      )
     })
   })
 })

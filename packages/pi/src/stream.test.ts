@@ -510,7 +510,7 @@ describe('streamCortexKitAntigravity', () => {
     })
     expect(body.request.labels.model_enum).toBe('MODEL_PLACEHOLDER_M298')
     expect(call?.[1]?.headers?.['User-Agent']).toContain(
-      'antigravity/cli/2.31.2',
+      'antigravity/cli/1.3.5',
     )
   })
 
@@ -537,7 +537,7 @@ describe('streamCortexKitAntigravity', () => {
     })
     expect(body.request.labels.model_enum).toBe('MODEL_PLACEHOLDER_M318')
     expect(call?.[1]?.headers?.['User-Agent']).toContain(
-      'antigravity/cli/2.31.2',
+      'antigravity/cli/1.3.5',
     )
   })
 

@@ -57,7 +57,7 @@ describe('project bootstrap', () => {
 
     expect(headers).toEqual({
       'User-Agent': expect.stringMatching(
-        /^antigravity\/cli\/2\.31\.2 \(aidev_client; os_type=.+; arch=.+; cl=974782877; auth_method=consumer\)$/,
+        /^antigravity\/cli\/1\.3\.5 \(aidev_client; os_type=.+; arch=.+; cl=998863838; auth_method=consumer\)$/,
       ),
       Authorization: 'Bearer token',
       'Content-Type': 'application/json',

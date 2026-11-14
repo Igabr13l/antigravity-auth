@@ -131,7 +131,7 @@ describe('plan-tier', () => {
       ).toBe('free')
       expect(getMinimumPlanForModel('antigravity-gemini-4-argon')).toBe('plus')
       expect(getMinimumPlanForModel('antigravity-gemini-4-hydrogen')).toBe(
-        'free',
+        'plus',
       )
       expect(getMinimumPlanForModel('antigravity-gpt-oss-120b-medium')).toBe(
         'plus',

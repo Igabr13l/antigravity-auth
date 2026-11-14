@@ -200,6 +200,21 @@ describe('agy request metadata', () => {
     }
   })
 
+  it('resolves Gemini 4 and Claude 5.5 model enums', () => {
+    expect(getAgyModelEnum('gemini-4-hydrogen-high')).toBe(
+      'MODEL_PLACEHOLDER_M525',
+    )
+    expect(getAgyModelEnum('gemini-4-hydrogen-xhigh')).toBe(
+      'MODEL_PLACEHOLDER_M528',
+    )
+    expect(getAgyModelEnum('gemini-4-argon-high')).toBe(
+      'MODEL_PLACEHOLDER_M417',
+    )
+    expect(getAgyModelEnum('claude-opus-5-5-high')).toBe(
+      'MODEL_PLACEHOLDER_M402',
+    )
+  })
+
   it('keeps cumulative non-Gemini usage flags when a session switches back to Gemini', () => {
     const session = createAgyRequestSessionContext('', {
       conversationId: 'conversation-id',

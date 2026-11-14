@@ -130,7 +130,8 @@ export function getMinimumPlanForModel(modelId: string): PlanTier {
   if (
     lower.includes('sonnet') ||
     lower.includes('gpt-oss') ||
-    lower.includes('argon')
+    lower.includes('argon') ||
+    lower.includes('hydrogen')
   ) {
     return 'plus'
   }

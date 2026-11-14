@@ -629,7 +629,19 @@ export function buildEnvelope(
 
   const generationConfig = { ...(request.generationConfig ?? {}) }
   delete generationConfig.thinkingConfig
-  if (resolved.thinkingLevel) {
+  const gemini4Match =
+    /^gemini-4-(hydrogen|argon|carbon)-(low|medium|high|xhigh)$/i.exec(
+      resolved.actualModel,
+    )
+  if (gemini4Match) {
+    const family = gemini4Match[1]!.toLowerCase()
+    const tier = gemini4Match[2]!.toLowerCase()
+    generationConfig.maxOutputTokens ??= family === 'argon' ? 65536 : 262144
+    generationConfig.thinkingConfig = {
+      includeThoughts: true,
+      thinkingLevel: tier === 'xhigh' ? 100 : tier.toUpperCase(),
+    }
+  } else if (resolved.thinkingLevel) {
     generationConfig.thinkingConfig = {
       includeThoughts: true,
       thinkingLevel: resolved.thinkingLevel,
@@ -1108,11 +1120,18 @@ export function createOpenCodeV2AntigravityPlugin(
               break
             }
 
-            if (response.status === 403 && reason === 'ACCOUNT_INELIGIBLE') {
+            if (
+              response.status === 403 &&
+              (reason === 'ACCOUNT_INELIGIBLE' || reason === 'TOS_VIOLATION')
+            ) {
               manager.markAccountIneligible(account.index, reason)
               await manager.flushSaveToDisk()
               excluded.add(account.index)
-              failure = new Error('Antigravity account is ineligible')
+              failure = new Error(
+                reason === 'TOS_VIOLATION'
+                  ? `Antigravity HTTP 403 (TOS_VIOLATION)${message ? `: ${message}` : ''}`
+                  : 'Antigravity account is ineligible',
+              )
               break
             }
 

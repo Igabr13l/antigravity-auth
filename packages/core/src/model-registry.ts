@@ -150,7 +150,7 @@ const ALL_MODEL_DEFINITIONS: OpencodeModelDefinitions = {
       limit: { context: 1048576, output: 65536 },
       modalities: DEFAULT_MODALITIES,
       variants: HYDROGEN_VARIANTS,
-      minPlan: 'free',
+      minPlan: 'plus',
     },
   ),
   'antigravity-gemini-3.1-pro': defineModel('antigravity-gemini-3.1-pro', {

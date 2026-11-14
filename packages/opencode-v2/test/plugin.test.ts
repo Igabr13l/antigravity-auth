@@ -893,4 +893,139 @@ describe('plan tier capture and capacity fallback routing', () => {
     expect(persisted.accounts[0].capturedPaidTierId).toBe('g1-pro-tier')
     expect(persisted.accounts[0].capturedTierAt).toBeGreaterThan(1)
   })
+
+  test('marks 403 TOS_VIOLATION account ineligible on disk and rotates to the next account', async () => {
+    const configDir = process.env.OPENCODE_CONFIG_DIR
+    if (!configDir) throw new Error('OPENCODE_CONFIG_DIR is not set')
+    mkdirSync(configDir, { recursive: true })
+    const accountsPath = join(configDir, 'antigravity-accounts.json')
+    writeFileSync(
+      accountsPath,
+      JSON.stringify(
+        {
+          version: 4,
+          accounts: [
+            {
+              email: 'flagged@example.test',
+              refreshToken: 'refresh-one',
+              projectId: 'proj',
+              managedProjectId: 'proj',
+              capturedTierId: 'free-tier',
+              capturedPaidTierId: 'g1-pro-tier',
+              capturedTierAt: Date.now(),
+              capturedTierSchemaVersion: 1,
+              addedAt: 1,
+              lastUsed: 2,
+              enabled: true,
+              rateLimitResetTimes: {},
+            },
+            {
+              email: 'healthy@example.test',
+              refreshToken: 'refresh-two',
+              projectId: 'proj',
+              managedProjectId: 'proj',
+              capturedTierId: 'free-tier',
+              capturedPaidTierId: 'g1-pro-tier',
+              capturedTierAt: Date.now(),
+              capturedTierSchemaVersion: 1,
+              addedAt: 1,
+              lastUsed: 1,
+              enabled: true,
+              rateLimitResetTimes: {},
+            },
+          ],
+          activeIndex: 0,
+          activeIndexByFamily: { claude: 0, gemini: 0 },
+        },
+        null,
+        2,
+      ),
+    )
+
+    let httpRequestHook: ((event: SessionHttpRequest) => Promise<void>) | null =
+      null
+    const attempts: string[] = []
+    const registration = { dispose: async () => undefined }
+
+    const adapter = createOpenCodeV2AntigravityPlugin({
+      refreshAntigravityToken: async (refreshToken) => ({
+        refresh: refreshToken,
+        access:
+          refreshToken === 'refresh-one' ? 'access-flagged' : 'access-healthy',
+        expires: Date.now() + 3_600_000,
+      }),
+      ensureProjectContext: async (auth) => ({
+        auth,
+        effectiveProjectId: 'proj',
+      }),
+      send: async ({ auth }) => {
+        attempts.push(auth.access ?? '')
+        if (auth.access === 'access-flagged') {
+          return new Response(
+            JSON.stringify({
+              error: {
+                code: 403,
+                message:
+                  'This service has been disabled in this account for violation of Terms of Service.',
+                details: [{ reason: 'TOS_VIOLATION' }],
+              },
+            }),
+            { status: 403 },
+          )
+        }
+        return successResponse()
+      },
+    })
+
+    const cleanup = await adapter.setup({
+      session: {
+        hook: async (name: string, callback: unknown) => {
+          if (name === 'http.request') {
+            httpRequestHook = callback as (
+              event: SessionHttpRequest,
+            ) => Promise<void>
+          }
+          return registration
+        },
+      },
+      integration: { transform: async () => registration },
+    } as never)
+
+    try {
+      const event = {
+        sessionID: 'tos-violation-rotation-session',
+        agent: 'build',
+        model: {
+          providerID: 'google',
+          id: 'gemini-4-argon',
+          variant: 'high',
+        },
+        kind: 'chat',
+        request: new Request(
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-4-argon:streamGenerateContent?alt=sse',
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+            }),
+          },
+        ),
+      }
+      await httpRequestHook!(event as never)
+      const response = await fetch(event.request)
+      expect(response.status).toBe(200)
+      expect(attempts).toEqual(['access-flagged', 'access-healthy'])
+    } finally {
+      if (cleanup) await cleanup()
+    }
+
+    const persisted = JSON.parse(readFileSync(accountsPath, 'utf8'))
+    expect(persisted.accounts[0]).toMatchObject({
+      enabled: false,
+      accountIneligible: true,
+      accountIneligibleReason: 'TOS_VIOLATION',
+    })
+    expect(persisted.accounts[1].enabled).toBe(true)
+  })
 })

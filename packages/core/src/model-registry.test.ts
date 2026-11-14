@@ -252,7 +252,7 @@ describe('model registry', () => {
   it('annotates model definitions with minimum plan tier requirements', () => {
     const definitions = getPublicModelDefinitions()
     expect(definitions['antigravity-gemini-4-carbon']?.minPlan).toBe('ultra')
-    expect(definitions['antigravity-gemini-4-hydrogen']?.minPlan).toBe('free')
+    expect(definitions['antigravity-gemini-4-hydrogen']?.minPlan).toBe('plus')
     expect(definitions['antigravity-claude-opus-5-5-thinking']?.minPlan).toBe(
       'pro',
     )

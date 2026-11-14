@@ -425,3 +425,55 @@ describe('readErrorDetails', () => {
     expect(details.retryDelayMs).toBeUndefined()
   })
 })
+
+describe('Gemini 4 native generationConfig and labels', () => {
+  it('sets native thinkingLevel, maxOutputTokens, and model_enum for gemini-4-argon-high', () => {
+    const resolved = resolveModelForHeaderStyle(
+      'gemini-4-argon-high',
+      'antigravity',
+    )
+    const envelope = buildEnvelope(
+      { contents: [{ role: 'user', parts: [{ text: 'hi' }] }] },
+      resolved,
+      'request-test-project',
+      scopeForRequest(),
+    )
+
+    expect(envelope.model).toBe('gemini-4-argon-high')
+    expect(envelope.request.generationConfig).toEqual({
+      maxOutputTokens: 65536,
+      thinkingConfig: {
+        includeThoughts: true,
+        thinkingLevel: 'HIGH',
+      },
+    })
+    expect(
+      (envelope.request.labels as Record<string, unknown>).model_enum,
+    ).toBe('MODEL_PLACEHOLDER_M417')
+  })
+
+  it('sets numeric thinkingLevel 100, 262144 maxOutputTokens, and model_enum for gemini-4-hydrogen-xhigh', () => {
+    const resolved = resolveModelForHeaderStyle(
+      'gemini-4-hydrogen-xhigh',
+      'antigravity',
+    )
+    const envelope = buildEnvelope(
+      { contents: [{ role: 'user', parts: [{ text: 'hi' }] }] },
+      resolved,
+      'request-test-project',
+      scopeForRequest(),
+    )
+
+    expect(envelope.model).toBe('gemini-4-hydrogen-xhigh')
+    expect(envelope.request.generationConfig).toEqual({
+      maxOutputTokens: 262144,
+      thinkingConfig: {
+        includeThoughts: true,
+        thinkingLevel: 100,
+      },
+    })
+    expect(
+      (envelope.request.labels as Record<string, unknown>).model_enum,
+    ).toBe('MODEL_PLACEHOLDER_M528')
+  })
+})
