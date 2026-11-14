@@ -283,12 +283,15 @@ describe('OpenCode 2 Antigravity request envelope', () => {
       scopeForRequest(),
     )
     expect(envelope.request.contents).toHaveLength(3)
+    expect(envelope.request.contents?.[0]?.parts).toEqual([
+      { text: '<USER_REQUEST>\nRead the file\n</USER_REQUEST>' },
+    ])
     expect(envelope.request.contents?.at(-1)).toEqual({
       role: 'model',
       parts: [
         {
           functionResponse: {
-            name: 'read',
+            name: 'read_file',
             response: { output: 'contents' },
           },
         },

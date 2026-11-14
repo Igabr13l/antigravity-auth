@@ -1292,4 +1292,175 @@ describe('plan tier capture and capacity fallback routing', () => {
     expect(persisted.accounts[1]?.capturedPaidTierId).toBe('g1-pro-tier')
     expect(persisted.activeIndexByFamily).toEqual({ claude: 1, gemini: 1 })
   })
+
+  test('camouflages OpenCode system prompt, tools, and user turns upstream and restores tool names in SSE responses', async () => {
+    const configDir = process.env.OPENCODE_CONFIG_DIR
+    if (!configDir) throw new Error('OPENCODE_CONFIG_DIR is not set')
+    mkdirSync(configDir, { recursive: true })
+    writeFileSync(
+      join(configDir, 'antigravity-accounts.json'),
+      JSON.stringify(
+        {
+          version: 4,
+          accounts: [
+            {
+              email: 'camo@example.test',
+              refreshToken: 'refresh-camo',
+              projectId: 'proj-camo',
+              managedProjectId: 'proj-camo',
+              capturedTierId: 'free-tier',
+              capturedPaidTierId: 'g1-pro-tier',
+              capturedTierAt: Date.now(),
+              capturedTierSchemaVersion: 1,
+              addedAt: 1,
+              lastUsed: 1,
+              enabled: true,
+              rateLimitResetTimes: {},
+            },
+          ],
+          activeIndex: 0,
+          activeIndexByFamily: { claude: 0, gemini: 0 },
+        },
+        null,
+        2,
+      ),
+    )
+
+    let httpRequestHook: ((event: SessionHttpRequest) => Promise<void>) | null =
+      null
+    let capturedEnvelope: Record<string, unknown> | undefined
+    const registration = { dispose: async () => undefined }
+
+    const adapter = createOpenCodeV2AntigravityPlugin({
+      refreshAntigravityToken: async (refreshToken) => ({
+        refresh: refreshToken,
+        access: 'access-camo',
+        expires: Date.now() + 3_600_000,
+      }),
+      ensureProjectContext: async (auth) => ({
+        auth,
+        effectiveProjectId: 'proj-camo',
+      }),
+      send: async ({ envelope }) => {
+        capturedEnvelope = envelope as unknown as Record<string, unknown>
+        const sse = [
+          `data: ${JSON.stringify({
+            response: {
+              candidates: [
+                {
+                  index: 0,
+                  content: {
+                    role: 'model',
+                    parts: [
+                      {
+                        functionCall: {
+                          name: 'run_command',
+                          args: { command: 'pwd' },
+                        },
+                        thoughtSignature: 'sig-upstream',
+                      },
+                    ],
+                  },
+                  finishReason: 'STOP',
+                },
+              ],
+            },
+          })}\n\n`,
+          'data: [DONE]\n\n',
+        ].join('')
+        return new Response(sse, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream; charset=utf-8' },
+        })
+      },
+    })
+
+    const cleanup = await adapter.setup({
+      session: {
+        hook: async (name: string, callback: unknown) => {
+          if (name === 'http.request') {
+            httpRequestHook = callback as (
+              event: SessionHttpRequest,
+            ) => Promise<void>
+          }
+          return registration
+        },
+      },
+      integration: { transform: async () => registration },
+    } as never)
+
+    try {
+      const event = {
+        sessionID: 'camo-session',
+        agent: 'build',
+        model: {
+          providerID: 'google',
+          id: 'gemini-4-hydrogen',
+          variant: 'high',
+        },
+        kind: 'chat',
+        request: new Request(
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-4-hydrogen:streamGenerateContent?alt=sse',
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              systemInstruction: {
+                parts: [
+                  {
+                    text: 'You are an AI agent running in OpenCode, a coding agent harness. Help the user accomplish their goals using the tools you have available.\n\n# Harness\n- Use `bash` to execute shell commands.',
+                  },
+                ],
+              },
+              tools: [
+                {
+                  functionDeclarations: [
+                    {
+                      name: 'bash',
+                      description: 'Run a shell command.',
+                      parameters: {
+                        type: 'object',
+                        properties: { command: { type: 'string' } },
+                      },
+                    },
+                  ],
+                },
+              ],
+              contents: [{ role: 'user', parts: [{ text: 'where am i?' }] }],
+            }),
+          },
+        ),
+      }
+
+      await httpRequestHook!(event as never)
+      const response = await fetch(event.request)
+      const bodyText = await response.text()
+
+      expect(response.ok).toBe(true)
+      const upstreamReq = capturedEnvelope?.request as {
+        systemInstruction: { parts: Array<{ text: string }> }
+        tools: Array<{ functionDeclarations: Array<{ name: string }> }>
+        contents: Array<{ parts: Array<{ text?: string }> }>
+      }
+      expect(upstreamReq.systemInstruction.parts[0]?.text).toContain(
+        'You are Antigravity',
+      )
+      expect(upstreamReq.systemInstruction.parts[0]?.text).not.toContain(
+        'OpenCode',
+      )
+      expect(upstreamReq.systemInstruction.parts[0]?.text).toContain(
+        '`run_command`',
+      )
+      expect(upstreamReq.tools[0]?.functionDeclarations[0]?.name).toBe(
+        'run_command',
+      )
+      expect(upstreamReq.contents[0]?.parts[0]?.text).toBe(
+        '<USER_REQUEST>\nwhere am i?\n</USER_REQUEST>',
+      )
+      expect(bodyText).toContain('"name":"bash"')
+      expect(bodyText).not.toContain('"name":"run_command"')
+    } finally {
+      if (cleanup) await cleanup()
+    }
+  })
 })

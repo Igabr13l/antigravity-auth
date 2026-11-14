@@ -66,6 +66,10 @@ import type {
 import type { Registration } from '@opencode-ai/plugin/promise/registration'
 import type { SessionRequestKind } from '@opencode-ai/plugin/promise/session'
 
+import {
+  applyOpenCodeCamouflageInPlace,
+  restoreClientFunctionCallsInPlace,
+} from './camouflage.ts'
 import { waitForAntigravityCode } from './oauth-callback.ts'
 import { accountsFilePath } from './paths.ts'
 
@@ -315,8 +319,15 @@ function unwrapFrame(parsed: unknown): GeminiPayload {
 
 // Antigravity's GPT/Claude bridges occasionally emit parts and roles the strict
 // native Gemini event schema rejects (e.g. role "assistant", or a part carrying
-// only a thought signature). Normalise every frame to the Gemini shape.
-function sanitizeInner(inner: GeminiPayload): GeminiPayload {
+// only a thought signature). Normalise every frame to the Gemini shape and restore
+// any camouflaged tool names back to OpenCode's declared client tool names.
+function sanitizeInner(
+  inner: GeminiPayload,
+  wireToClient?: ReadonlyMap<string, string>,
+): GeminiPayload {
+  if (wireToClient && wireToClient.size > 0) {
+    restoreClientFunctionCallsInPlace(inner, wireToClient)
+  }
   const candidates = inner?.candidates
   if (!Array.isArray(candidates)) return inner
   for (const candidate of candidates) {
@@ -612,13 +623,16 @@ function ensureTrailingUserTurn(
   }
 }
 
-export function buildEnvelope(
+function buildEnvelopeInternal(
   payload: GeminiPayload,
   resolved: ResolvedModel,
   projectID: string,
   scope: AgyRequestScope,
   options: { preserveFunctionCallSignatures?: boolean } = {},
-): AntigravityEnvelope {
+): {
+  envelope: AntigravityEnvelope
+  wireToClient: ReadonlyMap<string, string>
+} {
   const request = structuredClone(payload)
   const replaySignatures = options.preserveFunctionCallSignatures
     ? (request.contents ?? []).flatMap((content) =>
@@ -781,6 +795,10 @@ export function buildEnvelope(
     if (!isClaude) ensureFunctionCallSignatures(request)
   }
   ensureTrailingUserTurn(request, resolved.actualModel)
+  let wireToClient: ReadonlyMap<string, string> = new Map()
+  if (!isImage) {
+    wireToClient = applyOpenCodeCamouflageInPlace(request).wireToClient
+  }
 
   const metadata = buildAgyAgentRequestMetadata(
     scope.session,
@@ -793,13 +811,40 @@ export function buildEnvelope(
   orderAgyRequestPayloadInPlace(request)
 
   return {
-    project: projectID,
-    requestId: metadata.requestId,
-    request,
-    model: resolved.actualModel,
-    userAgent: 'antigravity',
-    requestType: 'agent',
+    envelope: {
+      project: projectID,
+      requestId: metadata.requestId,
+      request,
+      model: resolved.actualModel,
+      userAgent: 'antigravity',
+      requestType: 'agent',
+    },
+    wireToClient,
   }
+}
+
+export function buildCamouflagedEnvelope(
+  payload: GeminiPayload,
+  resolved: ResolvedModel,
+  projectID: string,
+  scope: AgyRequestScope,
+  options: { preserveFunctionCallSignatures?: boolean } = {},
+): {
+  envelope: AntigravityEnvelope
+  wireToClient: ReadonlyMap<string, string>
+} {
+  return buildEnvelopeInternal(payload, resolved, projectID, scope, options)
+}
+
+export function buildEnvelope(
+  payload: GeminiPayload,
+  resolved: ResolvedModel,
+  projectID: string,
+  scope: AgyRequestScope,
+  options: { preserveFunctionCallSignatures?: boolean } = {},
+): AntigravityEnvelope {
+  return buildEnvelopeInternal(payload, resolved, projectID, scope, options)
+    .envelope
 }
 
 export function createOpenCodeV2AntigravityPlugin(
@@ -1031,7 +1076,11 @@ export function createOpenCodeV2AntigravityPlugin(
       async function pickResponse(
         job: PendingJob,
         signal?: AbortSignal,
-      ): Promise<{ response: Response; account: ManagedAccount }> {
+      ): Promise<{
+        response: Response
+        account: ManagedAccount
+        wireToClient: ReadonlyMap<string, string>
+      }> {
         const family = familyFor(job.modelID)
         const requested = job.resolved.actualModel
         const identity = { id: job.sessionID ?? 'default', parentId: null }
@@ -1118,7 +1167,7 @@ export function createOpenCodeV2AntigravityPlugin(
 
           const sessionKey = requestSessionKey(job)
           const scope = requestSessions.beginRequest(sessionKey)
-          const envelope = buildEnvelope(
+          const { envelope, wireToClient } = buildCamouflagedEnvelope(
             job.payload,
             job.resolved,
             context.effectiveProjectId,
@@ -1179,7 +1228,7 @@ export function createOpenCodeV2AntigravityPlugin(
               manager.markAccountUsed(account.index)
               manager.recordRequest(account.index, family)
               manager.requestSaveToDisk()
-              return { response, account }
+              return { response, account, wireToClient }
             }
 
             const { reason, message, retryDelayMs } =
@@ -1360,6 +1409,7 @@ export function createOpenCodeV2AntigravityPlugin(
       async function pipeStream(
         upstream: Response,
         res: ServerResponse,
+        wireToClient: ReadonlyMap<string, string>,
       ): Promise<{
         sawContent: boolean
         hasFunctionCall: boolean
@@ -1405,7 +1455,7 @@ export function createOpenCodeV2AntigravityPlugin(
                 throw new Error(message)
               }
               const inner = await persistInlineImages(
-                sanitizeInner(unwrapFrame(parsed)),
+                sanitizeInner(unwrapFrame(parsed), wireToClient),
               )
               const parts = inner?.candidates?.[0]?.content?.parts ?? []
               if (
@@ -1449,6 +1499,7 @@ export function createOpenCodeV2AntigravityPlugin(
       // loopback must not answer that with `text/event-stream`).
       async function collectNonStream(
         upstream: Response,
+        wireToClient: ReadonlyMap<string, string>,
       ): Promise<GeminiPayload> {
         if (!upstream.body)
           throw new Error('Antigravity response body is missing')
@@ -1492,7 +1543,7 @@ export function createOpenCodeV2AntigravityPlugin(
                     : `Antigravity stream failed (${String(parsed.error.status ?? parsed.error.code ?? 'unknown')})`
                 throw new Error(message)
               }
-              const inner = sanitizeInner(unwrapFrame(parsed))
+              const inner = sanitizeInner(unwrapFrame(parsed), wireToClient)
               for (const candidate of inner?.candidates ?? []) {
                 const index = candidate.index ?? 0
                 let entry = byIndex.get(index)
@@ -1575,7 +1626,10 @@ export function createOpenCodeV2AntigravityPlugin(
           }
 
           if (!job.stream) {
-            const collected = await collectNonStream(picked.response)
+            const collected = await collectNonStream(
+              picked.response,
+              picked.wireToClient,
+            )
             const hasFunctionCall = collected.candidates?.some((candidate) =>
               candidate.content?.parts?.some((part) => part.functionCall),
             )
@@ -1590,6 +1644,7 @@ export function createOpenCodeV2AntigravityPlugin(
           const { sawContent, hasFunctionCall, terminal } = await pipeStream(
             picked.response,
             res,
+            picked.wireToClient,
           )
           if (!hasFunctionCall) {
             requestSessions.completeExecution(requestSessionKey(job))

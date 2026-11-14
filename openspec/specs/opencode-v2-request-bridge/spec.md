@@ -72,8 +72,9 @@ request.
 
 For streaming jobs the bridge SHALL emit `text/event-stream` frames where each
 frame is the sanitized inner Gemini event (the Antigravity
-`{ "response": … }` envelope unwrapped), and SHALL end only after a frame with
-a terminal `finishReason`.
+`{ "response": … }` envelope unwrapped) with any camouflaged Antigravity wire
+tool names on `functionCall` parts restored to the host's declared client tool
+names, and SHALL end only after a frame with a terminal `finishReason`.
 
 #### Scenario: Clean EOF without terminal frame fails
 
@@ -87,6 +88,14 @@ a terminal `finishReason`.
 - **WHEN** an upstream SSE frame contains an `error` object
 - **THEN** the bridge aborts the response (surfacing through the host error
   path) rather than emitting the frame
+
+#### Scenario: Camouflaged tool calls are restored for the host
+
+- **WHEN** an upstream SSE frame or collected non-streaming response emits a
+  `functionCall` using an Antigravity wire alias mapped for the request (for
+  example `run_command` mapped from `bash`)
+- **THEN** the bridge restores `functionCall.name` to the original client tool
+  name before writing the frame to the loopback response
 
 ### Requirement: Non-streaming response contract
 

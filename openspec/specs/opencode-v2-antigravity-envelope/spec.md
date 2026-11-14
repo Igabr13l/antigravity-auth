@@ -17,14 +17,29 @@ closes every conversation.
 The bridge SHALL clone the host payload, strip host-only fields (`model`,
 `project`, `providerOptions`, `user_prompt_id`, `session_id`), set the
 Antigravity identity fields (`userAgent: "antigravity"`,
-`requestType: "agent"`, effective project id), and attach request metadata
-(labels, session id, request id, ordering) built from the shared core
-request-metadata module.
+`requestType: "agent"`, effective project id), apply Antigravity payload
+camouflage on non-image requests (replacing OpenCode harness preambles and
+`<system-reminder>` markers with Antigravity `<identity>` framing, enclosing
+user prompt text in `<USER_REQUEST>` tags, and translating built-in OpenCode
+tool names onto native Antigravity tool identifiers with matching prose
+references), and attach request metadata (labels, session id, request id,
+ordering) built from the shared core request-metadata module.
 
 #### Scenario: Host options do not leak upstream
 
 - **WHEN** the host payload contains `providerOptions` or internal ids
 - **THEN** the outgoing envelope request omits them
+
+#### Scenario: OpenCode harness markers and tool names are camouflaged
+
+- **WHEN** a non-image host payload contains OpenCode system preamble text,
+  `<system-reminder>` tags, or built-in OpenCode tool declarations (such as
+  `bash`, `read`, `edit`, `write`, `grep`, `glob`)
+- **THEN** the outgoing `systemInstruction` leads with the Antigravity
+  `<identity>` block, rewrites active tool references to native Antigravity
+  tool identifiers (`run_command`, `read_file`, `edit_file`, `write_file`,
+  `grep_search`, `find_by_name`), encloses user requests in `<USER_REQUEST>`
+  tags, and omits `OpenCode` harness branding
 
 ### Requirement: Thinking configuration mapping
 
