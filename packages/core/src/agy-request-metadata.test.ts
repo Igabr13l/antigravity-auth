@@ -75,7 +75,7 @@ describe('agy request metadata', () => {
     ).toEqual({
       conversationId: 'conversation-id',
       trajectoryId: 'trajectory-id',
-      numericSessionId: fnv1a64Signed('file:///workspace'),
+      numericSessionId: '-3750763034362895579',
     })
   })
 
@@ -103,7 +103,7 @@ describe('agy request metadata', () => {
     ])
   })
 
-  it('derives last_step_index from the number of content parts', () => {
+  it('counts contents regardless of part count, as captured in agy 1.5.8', () => {
     const payload = {
       contents: [
         { role: 'user', parts: [{ text: 'prompt' }] },
@@ -121,12 +121,12 @@ describe('agy request metadata', () => {
       ],
     }
 
-    expect(countAgyRequestSteps(payload)).toBe(4)
-    expect(countAgyRequestSteps({ contents: [] })).toBe(1)
-    expect(countAgyRequestSteps({})).toBe(1)
+    expect(countAgyRequestSteps(payload)).toBe(3)
+    expect(countAgyRequestSteps({ contents: [] })).toBe(0)
+    expect(countAgyRequestSteps({})).toBe(0)
   })
 
-  it('counts a current function response as a native CLI execution step', () => {
+  it('counts a function response once as a content entry in agy 1.5.8', () => {
     const payload = {
       contents: [
         { role: 'user', parts: [{ text: 'prompt' }] },
@@ -147,7 +147,7 @@ describe('agy request metadata', () => {
     }
 
     expect(countAgyRequestSteps(payload, 'contents')).toBe(3)
-    expect(countAgyRequestSteps(payload, 'cli')).toBe(4)
+    expect(countAgyRequestSteps(payload, 'cli')).toBe(3)
   })
 
   it('builds captured Claude request IDs, labels, and numeric session ID', () => {
@@ -178,12 +178,15 @@ describe('agy request metadata', () => {
     )
 
     expect(metadata).toEqual({
-      requestId: 'agent/conversation-id/1784285195116/trajectory-id/5',
+      requestId: 'agent/conversation-id/1784285195116/trajectory-id/3',
       sessionId: '-3750763034362895579',
-      lastStepIndex: 4,
+      lastStepIndex: 2,
       labels: {
-        last_step_index: '4',
+        cascade_id: 'conversation-id',
+        last_step_index: '2',
         model_enum: 'MODEL_PLACEHOLDER_M35',
+        request_id: 'trajectory-id-0',
+        root_cascade_id: 'conversation-id',
         trajectory_id: 'trajectory-id',
         used_claude: 'true',
         used_claude_conservative: 'true',

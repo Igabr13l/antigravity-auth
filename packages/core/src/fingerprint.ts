@@ -11,32 +11,17 @@ import * as crypto from 'node:crypto'
 
 // Keep in sync with current Antigravity CLI releases: daily-cloudcode-pa.googleapis.com
 // gates newer models (e.g., gemini-4-hydrogen-*, gemini-4-argon-*) behind this version
-// and returns 404 NOT_FOUND if AGY_CLI_VERSION is too old.
-export const AGY_CLI_VERSION_FALLBACK = '1.3.5'
-
-export interface ResolveAgyCliVersionOptions {
-  env?: Record<string, string | undefined>
+// and returns 404 NOT_FOUND if AGY_CLI_VERSION is too old. Each version must stay paired
+// with its captured changelist so Google never sees an impossible version/changelist pair.
+export const VERIFIED_AGY_CLI_RELEASES: Readonly<Record<string, string>> = {
+  '1.5.8': '1020628950',
+  '1.3.5': '998863838',
+  '1.3.3': '990110566',
+  '1.1.24': '974782877',
 }
 
-/**
- * Resolve the Antigravity CLI version sent in `User-Agent`:
- * 1. `AGY_CLI_VERSION` environment override
- * 2. `AGY_CLI_VERSION_FALLBACK`
- */
-export function resolveAgyCliVersion(
-  options: ResolveAgyCliVersionOptions = {},
-): string {
-  const env = options.env ?? process.env
-  const envOverride = env.AGY_CLI_VERSION?.trim()
-  if (envOverride) {
-    return envOverride
-  }
-
-  return AGY_CLI_VERSION_FALLBACK
-}
-
-export const AGY_CLI_VERSION = resolveAgyCliVersion()
-export const AGY_CLI_CHANGE_LIST = '998863838'
+export const AGY_CLI_VERSION = '1.5.8'
+export const AGY_CLI_CHANGE_LIST = VERIFIED_AGY_CLI_RELEASES[AGY_CLI_VERSION]!
 const ANTIGRAVITY_API_CLIENT = 'antigravity-cli'
 
 export interface ClientMetadata {
@@ -100,8 +85,8 @@ export function buildAntigravityHarnessUserAgent(
 ): string {
   const osType = normalizeHarnessPlatform(platform)
   const normalizedArch = normalizeHarnessArch(arch)
-  const changeList =
-    version === AGY_CLI_VERSION ? `; cl=${AGY_CLI_CHANGE_LIST}` : ''
+  const verifiedCl = VERIFIED_AGY_CLI_RELEASES[version]
+  const changeList = verifiedCl ? `; cl=${verifiedCl}` : ''
   return `antigravity/cli/${version} (aidev_client; os_type=${osType}; arch=${normalizedArch}${changeList}; auth_method=${authMethod})`
 }
 

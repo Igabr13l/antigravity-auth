@@ -92,13 +92,12 @@ describe('OpenCode 2 Antigravity request envelope', () => {
     // The thinking part is neutralized rather than left as an unsigned
     // thinking block for the Claude bridge to reject.
     expect(envelope.request.contents?.[0]?.parts).toEqual([{ text: '.' }])
-    expect(
-      (
-        envelope.request.toolConfig?.functionCallingConfig as
-          | { mode?: string }
-          | undefined
-      )?.mode,
-    ).toBe('VALIDATED')
+    expect(envelope.request.toolConfig).toBeUndefined()
+    expect(envelope.request.tools).toEqual([
+      {
+        functionDeclarations: [expect.objectContaining({ name: 'read_file' })],
+      },
+    ])
   })
 
   it('normalizes replay signatures across parallel function calls', () => {
@@ -283,10 +282,17 @@ describe('OpenCode 2 Antigravity request envelope', () => {
       'project-gemini',
       scopeForRequest(),
     )
-    expect(envelope.request.contents?.at(-2)?.role).toBe('model')
+    expect(envelope.request.contents).toHaveLength(3)
     expect(envelope.request.contents?.at(-1)).toEqual({
-      role: 'user',
-      parts: [{ text: '[Continue]' }],
+      role: 'model',
+      parts: [
+        {
+          functionResponse: {
+            name: 'read',
+            response: { output: 'contents' },
+          },
+        },
+      ],
     })
   })
 
@@ -318,10 +324,11 @@ describe('OpenCode 2 Antigravity request envelope', () => {
     expect(envelope.request.generationConfig?.thinkingConfig).toBeUndefined()
   })
 
-  it('sets VALIDATED on tool requests and removes host provider options', () => {
+  it('removes toolConfig, flattens tool declarations, and removes host provider options', () => {
     const payload = {
       contents: [{ role: 'user', parts: [{ text: 'Use a tool' }] }],
       providerOptions: { google: { opaque: true } },
+      toolConfig: { functionCallingConfig: { mode: 'VALIDATED' } },
       tools: [
         {
           functionDeclarations: [
@@ -330,6 +337,13 @@ describe('OpenCode 2 Antigravity request envelope', () => {
               parameters: {
                 type: 'object',
                 properties: { query: { type: 'string' } },
+              },
+            },
+            {
+              name: 'search',
+              parameters: {
+                type: 'object',
+                properties: { term: { type: 'string' } },
               },
             },
           ],
@@ -349,9 +363,12 @@ describe('OpenCode 2 Antigravity request envelope', () => {
     )
 
     expect(envelope.request.providerOptions).toBeUndefined()
-    expect(envelope.request.toolConfig).toEqual({
-      functionCallingConfig: { mode: 'VALIDATED' },
-    })
+    expect(envelope.request.toolConfig).toBeUndefined()
+    expect(envelope.request.tools).toHaveLength(2)
+    expect(envelope.request.tools).toEqual([
+      { functionDeclarations: [expect.objectContaining({ name: 'lookup' })] },
+      { functionDeclarations: [expect.objectContaining({ name: 'search' })] },
+    ])
   })
 })
 
@@ -475,5 +492,54 @@ describe('Gemini 4 native generationConfig and labels', () => {
     expect(
       (envelope.request.labels as Record<string, unknown>).model_enum,
     ).toBe('MODEL_PLACEHOLDER_M528')
+  })
+
+  it('uses native agy 1.5.8 thinkingLevel without thinkingBudget and full labels for gemini-3.8-flash and claude-5-5', () => {
+    const flashResolved = resolveModelForHeaderStyle(
+      'gemini-3.8-flash-medium',
+      'antigravity',
+    )
+    const flashScope = scopeForRequest()
+    const flashEnvelope = buildEnvelope(
+      { contents: [{ role: 'user', parts: [{ text: 'hi' }] }] },
+      flashResolved,
+      'request-test-project',
+      flashScope,
+    )
+    expect(flashEnvelope.request.generationConfig).toEqual({
+      maxOutputTokens: 65536,
+      thinkingConfig: {
+        includeThoughts: true,
+        thinkingLevel: 'MEDIUM',
+      },
+    })
+    expect(flashEnvelope.request.labels).toMatchObject({
+      cascade_id: flashScope.session.conversationId,
+      root_cascade_id: flashScope.session.conversationId,
+      request_id: `${flashScope.session.trajectoryId}-0`,
+      last_step_index: '0',
+      model_enum: 'MODEL_PLACEHOLDER_M319',
+    })
+
+    const claudeResolved = resolveModelForHeaderStyle(
+      'claude-sonnet-5-5-high',
+      'antigravity',
+    )
+    const claudeEnvelope = buildEnvelope(
+      { contents: [{ role: 'user', parts: [{ text: 'hi' }] }] },
+      claudeResolved,
+      'request-test-project',
+      scopeForRequest(),
+    )
+    expect(claudeEnvelope.request.generationConfig).toEqual({
+      maxOutputTokens: 128000,
+      thinkingConfig: {
+        includeThoughts: true,
+        thinkingLevel: 'HIGH',
+      },
+    })
+    expect(
+      (claudeEnvelope.request.labels as Record<string, unknown>).model_enum,
+    ).toBe('MODEL_PLACEHOLDER_M405')
   })
 })

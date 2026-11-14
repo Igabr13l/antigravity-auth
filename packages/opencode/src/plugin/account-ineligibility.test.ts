@@ -60,11 +60,11 @@ describe('account eligibility recovery', () => {
         sessionId: '-3750763034362895579',
         labels: {
           model_enum: 'MODEL_PLACEHOLDER_M20',
-          last_step_index: '1',
+          last_step_index: '0',
         },
       },
     })
-    expect(body.requestId).toMatch(/^agent\/[0-9a-f-]+\/\d+\/[0-9a-f-]+\/2$/)
+    expect(body.requestId).toMatch(/^agent\/[0-9a-f-]+\/\d+\/[0-9a-f-]+\/1$/)
   })
 })
 

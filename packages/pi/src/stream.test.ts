@@ -244,14 +244,17 @@ describe('finalizePiAntigravityRequest', () => {
     )
 
     expect(requestId).toBe(
-      'agent/conversation-id/1784285195116/trajectory-id/2',
+      'agent/conversation-id/1784285195116/trajectory-id/1',
     )
     expect(request.toolConfig).toEqual({
       functionCallingConfig: { mode: 'VALIDATED' },
     })
     expect(request.labels).toEqual({
-      last_step_index: '1',
+      cascade_id: 'conversation-id',
+      last_step_index: '0',
       model_enum: 'MODEL_PLACEHOLDER_M84',
+      request_id: 'trajectory-id-0',
+      root_cascade_id: 'conversation-id',
       trajectory_id: 'trajectory-id',
       used_claude: 'false',
       used_claude_conservative: 'false',
@@ -311,10 +314,10 @@ describe('finalizePiAntigravityRequest', () => {
     )
 
     expect(requestId).toBe(
-      'agent/conversation-id/1784285195116/trajectory-id/5',
+      'agent/conversation-id/1784285195116/trajectory-id/3',
     )
     expect(request.labels).toMatchObject({
-      last_step_index: '4',
+      last_step_index: '2',
       model_enum: 'MODEL_PLACEHOLDER_M71',
     })
   })
@@ -510,7 +513,7 @@ describe('streamCortexKitAntigravity', () => {
     })
     expect(body.request.labels.model_enum).toBe('MODEL_PLACEHOLDER_M298')
     expect(call?.[1]?.headers?.['User-Agent']).toContain(
-      'antigravity/cli/1.3.5',
+      'antigravity/cli/1.5.8',
     )
   })
 
@@ -537,7 +540,7 @@ describe('streamCortexKitAntigravity', () => {
     })
     expect(body.request.labels.model_enum).toBe('MODEL_PLACEHOLDER_M318')
     expect(call?.[1]?.headers?.['User-Agent']).toContain(
-      'antigravity/cli/1.3.5',
+      'antigravity/cli/1.5.8',
     )
   })
 
@@ -554,11 +557,11 @@ describe('streamCortexKitAntigravity', () => {
     const firstBody = JSON.parse(String(calls.at(-2)?.[1]?.body))
     const secondBody = JSON.parse(String(calls.at(-1)?.[1]?.body))
     expect(firstBody.request.labels).not.toHaveProperty('last_execution_id')
-    expect(firstBody.request.labels.last_step_index).toBe('1')
+    expect(firstBody.request.labels.last_step_index).toBe('0')
     expect(secondBody.request.labels.last_execution_id).toMatch(
       /^[0-9a-f-]{36}$/,
     )
-    expect(secondBody.request.labels.last_step_index).toBe('2')
+    expect(secondBody.request.labels.last_step_index).toBe('0')
   })
 
   it('does not rotate execution metadata on a tool-call turn', async () => {
@@ -581,7 +584,7 @@ describe('streamCortexKitAntigravity', () => {
       String(fetchWithAgyCliTransportMock.mock.calls.at(-1)?.[1]?.body),
     )
     expect(secondBody.request.labels).not.toHaveProperty('last_execution_id')
-    expect(secondBody.request.labels.last_step_index).toBe('1')
+    expect(secondBody.request.labels.last_step_index).toBe('0')
   })
 
   it('releases and cancels an open response body after STOP', async () => {

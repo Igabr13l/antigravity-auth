@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'bun:test'
 
 import {
-  AGY_CLI_VERSION_FALLBACK,
+  AGY_CLI_CHANGE_LIST,
+  AGY_CLI_VERSION,
   buildAntigravityHarnessBootstrapHeaders,
   buildAntigravityHarnessLoadCodeAssistUserAgent,
   buildAntigravityHarnessPlatformArch,
@@ -11,8 +12,8 @@ import {
   generateFingerprint,
   getSessionFingerprint,
   regenerateSessionFingerprint,
-  resolveAgyCliVersion,
   updateFingerprintVersion,
+  VERIFIED_AGY_CLI_RELEASES,
 } from './fingerprint.ts'
 
 describe('Antigravity fingerprint', () => {
@@ -30,11 +31,11 @@ describe('Antigravity fingerprint', () => {
     })
 
     it('builds the captured agy CLI User-Agent with auth_method=consumer', () => {
-      expect(buildAntigravityHarnessUserAgent('1.3.5', 'darwin', 'arm64')).toBe(
-        'antigravity/cli/1.3.5 (aidev_client; os_type=darwin; arch=arm64; cl=998863838; auth_method=consumer)',
+      expect(buildAntigravityHarnessUserAgent('1.5.8', 'darwin', 'arm64')).toBe(
+        'antigravity/cli/1.5.8 (aidev_client; os_type=darwin; arch=arm64; cl=1020628950; auth_method=consumer)',
       )
-      expect(buildAntigravityHarnessUserAgent('1.3.5', 'win32', 'x64')).toBe(
-        'antigravity/cli/1.3.5 (aidev_client; os_type=windows; arch=amd64; cl=998863838; auth_method=consumer)',
+      expect(buildAntigravityHarnessUserAgent('1.5.8', 'win32', 'x64')).toBe(
+        'antigravity/cli/1.5.8 (aidev_client; os_type=windows; arch=amd64; cl=1020628950; auth_method=consumer)',
       )
     })
 
@@ -51,7 +52,7 @@ describe('Antigravity fingerprint', () => {
 
       expect(headers).toEqual({
         'User-Agent': expect.stringMatching(
-          /^antigravity\/cli\/1\.3\.5 \(aidev_client; os_type=.+; arch=.+; cl=998863838; auth_method=consumer\)$/,
+          /^antigravity\/cli\/1\.5\.8 \(aidev_client; os_type=.+; arch=.+; cl=1020628950; auth_method=consumer\)$/,
         ),
         Authorization: 'Bearer token',
         'Content-Type': 'application/json',
@@ -134,19 +135,26 @@ describe('Antigravity fingerprint', () => {
     })
   })
 
-  describe('resolveAgyCliVersion', () => {
-    it('prefers AGY_CLI_VERSION env override when set', () => {
-      expect(
-        resolveAgyCliVersion({
-          env: { AGY_CLI_VERSION: '1.5.5' },
-        }),
-      ).toBe('1.5.5')
+  describe('verified agy CLI releases', () => {
+    it('pairs AGY_CLI_VERSION 1.5.8 with its captured changelist 1020628950', () => {
+      expect(AGY_CLI_VERSION).toBe('1.5.8')
+      expect(AGY_CLI_CHANGE_LIST).toBe('1020628950')
+      expect(VERIFIED_AGY_CLI_RELEASES[AGY_CLI_VERSION]).toBe(
+        AGY_CLI_CHANGE_LIST,
+      )
     })
 
-    it('falls back to AGY_CLI_VERSION_FALLBACK when env override is unset or blank', () => {
-      expect(resolveAgyCliVersion({ env: {} })).toBe(AGY_CLI_VERSION_FALLBACK)
-      expect(resolveAgyCliVersion({ env: { AGY_CLI_VERSION: '   ' } })).toBe(
-        AGY_CLI_VERSION_FALLBACK,
+    it('maps historical verified CLI versions to their captured changelists', () => {
+      expect(buildAntigravityHarnessUserAgent('1.3.5', 'darwin', 'arm64')).toBe(
+        'antigravity/cli/1.3.5 (aidev_client; os_type=darwin; arch=arm64; cl=998863838; auth_method=consumer)',
+      )
+      expect(buildAntigravityHarnessUserAgent('1.3.3', 'darwin', 'arm64')).toBe(
+        'antigravity/cli/1.3.3 (aidev_client; os_type=darwin; arch=arm64; cl=990110566; auth_method=consumer)',
+      )
+      expect(
+        buildAntigravityHarnessUserAgent('1.1.24', 'darwin', 'arm64'),
+      ).toBe(
+        'antigravity/cli/1.1.24 (aidev_client; os_type=darwin; arch=arm64; cl=974782877; auth_method=consumer)',
       )
     })
   })

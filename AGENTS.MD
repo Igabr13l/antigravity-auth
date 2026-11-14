@@ -161,7 +161,7 @@ Accounts rotate on rate limits. Gemini has dual quota pools (Antigravity headers
 ### 6. Fingerprint System
 Per-account device fingerprints stored in `antigravity-accounts.json`. Each fingerprint includes deviceId, sessionToken, userAgent, and a reduced clientMetadata (ideType, platform, pluginType — no osVersion, arch, or sqmId). The only header composed is `User-Agent`, built by `buildFingerprintHeaders()` in `fingerprint.ts` and applied on the antigravity request path in `request.ts`. History tracked (max 5), restorable.
 
-> **Important (`AGY_CLI_VERSION`)**: `daily-cloudcode-pa.googleapis.com` gates newer models (e.g. `gemini-4-hydrogen-*`, `gemini-4-argon-*`) behind the version in `antigravity/cli/<version>` (`AGY_CLI_VERSION` in `packages/core/src/fingerprint.ts`). If `fetchAvailableModels` omits a newly released model or `streamGenerateContent` returns `404 NOT_FOUND` for it, bump `AGY_CLI_VERSION` to match the current Antigravity release (note: `updateFingerprintVersion` automatically migrates stored account `userAgent` strings on load).
+> **Important (`AGY_CLI_VERSION`)**: `daily-cloudcode-pa.googleapis.com` gates newer models (e.g. `gemini-4-hydrogen-*`, `gemini-4-argon-*`) behind the version in `antigravity/cli/<version>` (`AGY_CLI_VERSION` in `packages/core/src/fingerprint.ts`). If `fetchAvailableModels` omits a newly released model or `streamGenerateContent` returns `404 NOT_FOUND` for it, update `AGY_CLI_VERSION` and `AGY_CLI_CHANGE_LIST` together from a real captured `agy` CLI release (currently `1.5.8` / `cl=1020628950`) — never mix a version from the Desktop IDE (`Antigravity.app`) with an old CLI changelist (note: `updateFingerprintVersion` automatically migrates stored account `userAgent` strings on load).
 
 ## Dependencies
 

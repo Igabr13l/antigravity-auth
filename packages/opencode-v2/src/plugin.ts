@@ -493,24 +493,17 @@ export async function readErrorDetails(
 }
 
 function configureToolCalling(request: GeminiPayload): void {
+  delete request.toolConfig
   if (!Array.isArray(request.tools) || request.tools.length === 0) {
-    delete request.toolConfig
     return
   }
-  const toolConfig =
-    request.toolConfig &&
-    typeof request.toolConfig === 'object' &&
-    !Array.isArray(request.toolConfig)
-      ? request.toolConfig
-      : {}
-  const functionCallingConfig: Record<string, unknown> = isRecord(
-    toolConfig.functionCallingConfig,
+  request.tools = request.tools.flatMap((tool) =>
+    isRecord(tool) && Array.isArray(tool.functionDeclarations)
+      ? tool.functionDeclarations.map((declaration) => ({
+          functionDeclarations: [declaration],
+        }))
+      : [tool],
   )
-    ? toolConfig.functionCallingConfig
-    : {}
-  functionCallingConfig.mode = 'VALIDATED'
-  toolConfig.functionCallingConfig = functionCallingConfig
-  request.toolConfig = toolConfig
 }
 
 function normalizeFunctionResponseRoles(request: GeminiPayload): void {
@@ -593,11 +586,32 @@ function stripClaudeThinkingParts(request: GeminiPayload): void {
   }
 }
 
-function ensureTrailingUserTurn(request: GeminiPayload): void {
+function isGeminiFunctionResponseTurn(
+  content: GeminiContent | undefined,
+  actualModel: string,
+): boolean {
+  return (
+    actualModel.toLowerCase().startsWith('gemini-') &&
+    content?.role === 'model' &&
+    Array.isArray(content.parts) &&
+    content.parts.length > 0 &&
+    content.parts.every((part) => part.functionResponse !== undefined)
+  )
+}
+
+function ensureTrailingUserTurn(
+  request: GeminiPayload,
+  actualModel: string,
+): void {
   if (!Array.isArray(request.contents) || request.contents.length === 0) return
   const last = request.contents.at(-1)
-  if (last?.role !== 'model' && last?.role !== 'assistant') return
-  request.contents.push({ role: 'user', parts: [{ text: '[Continue]' }] })
+  if (
+    (last?.role === 'model' &&
+      !isGeminiFunctionResponseTurn(last, actualModel)) ||
+    last?.role === 'assistant'
+  ) {
+    request.contents.push({ role: 'user', parts: [{ text: '[Continue]' }] })
+  }
 }
 
 export function buildEnvelope(
@@ -633,6 +647,9 @@ export function buildEnvelope(
     /^gemini-4-(hydrogen|argon|carbon)-(low|medium|high|xhigh)$/i.exec(
       resolved.actualModel,
     )
+  const flash38Match = /^gemini-3\.8-flash-(low|medium|high)$/i.exec(
+    resolved.actualModel,
+  )
   if (gemini4Match) {
     const family = gemini4Match[1]!.toLowerCase()
     const tier = gemini4Match[2]!.toLowerCase()
@@ -640,6 +657,13 @@ export function buildEnvelope(
     generationConfig.thinkingConfig = {
       includeThoughts: true,
       thinkingLevel: tier === 'xhigh' ? 100 : tier.toUpperCase(),
+    }
+  } else if (flash38Match) {
+    const tier = flash38Match[1]!.toLowerCase()
+    generationConfig.maxOutputTokens ??= 65536
+    generationConfig.thinkingConfig = {
+      includeThoughts: true,
+      thinkingLevel: tier.toUpperCase(),
     }
   } else if (resolved.thinkingLevel) {
     generationConfig.thinkingConfig = {
@@ -695,25 +719,45 @@ export function buildEnvelope(
         return isRecord(clean) ? clean : {}
       },
     })
-    const claudeGeneration = request.generationConfig
-    if (claudeGeneration) {
-      claudeGeneration.maxOutputTokens = CLAUDE_THINKING_MAX_OUTPUT_TOKENS
+    const claude55Match =
+      /^claude-(?:opus|sonnet)-5-5-(low|medium|high)$/i.exec(
+        resolved.actualModel,
+      )
+    if (claude55Match) {
+      const claudeGeneration: Record<string, unknown> = isRecord(
+        request.generationConfig,
+      )
+        ? { ...request.generationConfig }
+        : {}
+      claudeGeneration.maxOutputTokens = 128_000
       delete claudeGeneration.max_output_tokens
-    }
-    const claudeThinking = isRecord(claudeGeneration?.thinkingConfig)
-      ? claudeGeneration.thinkingConfig
-      : undefined
-    if (claudeThinking) {
-      claudeGeneration!.thinkingConfig = {
-        includeThoughts: claudeThinking.include_thoughts !== false,
-        ...(typeof claudeThinking.thinking_budget === 'number'
-          ? { thinkingBudget: claudeThinking.thinking_budget }
-          : {}),
+      claudeGeneration.thinkingConfig = {
+        includeThoughts: true,
+        thinkingLevel: claude55Match[1]!.toUpperCase(),
+      }
+      request.generationConfig = claudeGeneration
+    } else {
+      const claudeGeneration = request.generationConfig
+      if (claudeGeneration) {
+        claudeGeneration.maxOutputTokens = CLAUDE_THINKING_MAX_OUTPUT_TOKENS
+        delete claudeGeneration.max_output_tokens
+      }
+      const claudeThinking = isRecord(claudeGeneration?.thinkingConfig)
+        ? claudeGeneration.thinkingConfig
+        : undefined
+      if (claudeThinking) {
+        claudeGeneration!.thinkingConfig = {
+          includeThoughts: claudeThinking.include_thoughts !== false,
+          ...(typeof claudeThinking.thinking_budget === 'number'
+            ? { thinkingBudget: claudeThinking.thinking_budget }
+            : {}),
+        }
       }
     }
     // Replayed thinking blocks cannot be validated by the Claude bridge; the
     // model regenerates thinking each turn anyway (see AGENTS.md).
     stripClaudeThinkingParts(request)
+    configureToolCalling(request)
   } else {
     normalizeGeminiTools(request, {
       moveNumericConstraintsToDescription: isGpt,
@@ -738,7 +782,7 @@ export function buildEnvelope(
     // invalid, so leave unsigned function calls unsigned there.
     if (!isClaude) ensureFunctionCallSignatures(request)
   }
-  ensureTrailingUserTurn(request)
+  ensureTrailingUserTurn(request, resolved.actualModel)
 
   const metadata = buildAgyAgentRequestMetadata(
     scope.session,
@@ -789,7 +833,7 @@ export function createOpenCodeV2AntigravityPlugin(
     id: 'cortexkit.antigravity-auth',
 
     async setup(ctx) {
-      const requestSessions = new AgyRequestSessionStore('opencode-v2')
+      const requestSessions = new AgyRequestSessionStore()
       const jobs = new Map<string, PendingJob>()
       const jobTimers = new Map<string, NodeJS.Timeout>()
       const lastModelBySession = new Map<string, string>()
@@ -1066,6 +1110,12 @@ export function createOpenCodeV2AntigravityPlugin(
           ) {
             const endpoint = ANTIGRAVITY_ENDPOINT_FALLBACKS[endpointIndex]
             if (!endpoint) continue
+            const nextEndpoint =
+              ANTIGRAVITY_ENDPOINT_FALLBACKS[endpointIndex + 1]
+            const skipNextProdFallback =
+              nextEndpoint === ANTIGRAVITY_ENDPOINT_PROD &&
+              (isAntigravityOnlyModel(requested) ||
+                isAntigravityOnlyModel(job.modelID))
             let response: Response
             try {
               response = await send(envelope, auth, endpoint, signal, job.kind)
@@ -1077,6 +1127,9 @@ export function createOpenCodeV2AntigravityPlugin(
                 errorMessage(error),
               )
               failure = error
+              if (signal?.aborted || skipNextProdFallback) {
+                break
+              }
               continue
             }
             log(
@@ -1099,11 +1152,19 @@ export function createOpenCodeV2AntigravityPlugin(
             const { reason, message, retryDelayMs } =
               await readErrorDetails(response)
             log('upstream-error', response.status, reason ?? '', message)
-            if (
-              response.status === 404 &&
-              endpointIndex < ANTIGRAVITY_ENDPOINT_FALLBACKS.length - 1
-            )
-              continue
+            if (response.status === 404) {
+              if (
+                endpointIndex < ANTIGRAVITY_ENDPOINT_FALLBACKS.length - 1 &&
+                !skipNextProdFallback
+              ) {
+                continue
+              }
+              failure = new Error(
+                `Antigravity HTTP 404${reason ? ` (${reason})` : ''}${message ? `: ${message}` : ''}`,
+              )
+              excluded.add(account.index)
+              break
+            }
 
             if (response.status === 401) {
               if (!forcedRefresh) {
@@ -1153,12 +1214,6 @@ export function createOpenCodeV2AntigravityPlugin(
                   owningCapacityRetryDelayMs = retryDelayMs
                 }
               }
-              const nextEndpoint =
-                ANTIGRAVITY_ENDPOINT_FALLBACKS[endpointIndex + 1]
-              const skipNextProdFallback =
-                nextEndpoint === ANTIGRAVITY_ENDPOINT_PROD &&
-                (isAntigravityOnlyModel(requested) ||
-                  isAntigravityOnlyModel(job.modelID))
               if (
                 endpointIndex < ANTIGRAVITY_ENDPOINT_FALLBACKS.length - 1 &&
                 !skipNextProdFallback
@@ -1250,8 +1305,11 @@ export function createOpenCodeV2AntigravityPlugin(
           }
           // Transport failures may exhaust every endpoint without producing an
           // HTTP response. Move to another account instead of selecting the same
-          // account again in the outer loop.
+          // account again in the outer loop, unless the caller aborted.
           excluded.add(account.index)
+          if (signal?.aborted) {
+            break
+          }
         }
 
         await manager.flushSaveToDisk().catch(() => undefined)

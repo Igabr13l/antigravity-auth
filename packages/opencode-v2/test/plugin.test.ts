@@ -1028,4 +1028,139 @@ describe('plan tier capture and capacity fallback routing', () => {
     })
     expect(persisted.accounts[1].enabled).toBe(true)
   })
+
+  test('skips cloudcode-pa prod fallback on 404 for Antigravity-only models and rotates on daily', async () => {
+    const configDir = process.env.OPENCODE_CONFIG_DIR
+    if (!configDir) throw new Error('OPENCODE_CONFIG_DIR is not set')
+    mkdirSync(configDir, { recursive: true })
+    const accountsPath = join(configDir, 'antigravity-accounts.json')
+    writeFileSync(
+      accountsPath,
+      JSON.stringify(
+        {
+          version: 4,
+          accounts: [
+            {
+              email: 'first@example.test',
+              refreshToken: 'refresh-one',
+              projectId: 'proj',
+              managedProjectId: 'proj',
+              capturedTierId: 'free-tier',
+              capturedPaidTierId: 'g1-pro-tier',
+              capturedTierAt: Date.now(),
+              capturedTierSchemaVersion: 1,
+              addedAt: 1,
+              lastUsed: 2,
+              enabled: true,
+              rateLimitResetTimes: {},
+            },
+            {
+              email: 'second@example.test',
+              refreshToken: 'refresh-two',
+              projectId: 'proj',
+              managedProjectId: 'proj',
+              capturedTierId: 'free-tier',
+              capturedPaidTierId: 'g1-pro-tier',
+              capturedTierAt: Date.now(),
+              capturedTierSchemaVersion: 1,
+              addedAt: 1,
+              lastUsed: 1,
+              enabled: true,
+              rateLimitResetTimes: {},
+            },
+          ],
+          activeIndex: 0,
+          activeIndexByFamily: { claude: 0, gemini: 0 },
+        },
+        null,
+        2,
+      ),
+    )
+
+    let httpRequestHook: ((event: SessionHttpRequest) => Promise<void>) | null =
+      null
+    const calls: Array<{ access: string; endpoint: string }> = []
+    const registration = { dispose: async () => undefined }
+
+    const adapter = createOpenCodeV2AntigravityPlugin({
+      refreshAntigravityToken: async (refreshToken) => ({
+        refresh: refreshToken,
+        access:
+          refreshToken === 'refresh-one' ? 'access-first' : 'access-second',
+        expires: Date.now() + 3_600_000,
+      }),
+      ensureProjectContext: async (auth) => ({
+        auth,
+        effectiveProjectId: 'proj',
+      }),
+      send: async ({ auth, endpoint }) => {
+        calls.push({ access: auth.access ?? '', endpoint })
+        if (auth.access === 'access-first') {
+          return new Response(
+            JSON.stringify({
+              error: {
+                code: 404,
+                message: 'Requested entity was not found.',
+                status: 'NOT_FOUND',
+              },
+            }),
+            { status: 404 },
+          )
+        }
+        return successResponse()
+      },
+    })
+
+    const cleanup = await adapter.setup({
+      session: {
+        hook: async (name: string, callback: unknown) => {
+          if (name === 'http.request') {
+            httpRequestHook = callback as (
+              event: SessionHttpRequest,
+            ) => Promise<void>
+          }
+          return registration
+        },
+      },
+      integration: { transform: async () => registration },
+    } as never)
+
+    try {
+      const event = {
+        sessionID: 'skip-prod-404-session',
+        agent: 'build',
+        model: {
+          providerID: 'google',
+          id: 'gemini-4-hydrogen',
+          variant: 'medium',
+        },
+        kind: 'chat',
+        request: new Request(
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-4-hydrogen:streamGenerateContent?alt=sse',
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: 'hi' }] }],
+            }),
+          },
+        ),
+      }
+      await httpRequestHook!(event as never)
+      const response = await fetch(event.request)
+      expect(response.status).toBe(200)
+      expect(calls).toEqual([
+        {
+          access: 'access-first',
+          endpoint: 'https://daily-cloudcode-pa.googleapis.com',
+        },
+        {
+          access: 'access-second',
+          endpoint: 'https://daily-cloudcode-pa.googleapis.com',
+        },
+      ])
+    } finally {
+      if (cleanup) await cleanup()
+    }
+  })
 })

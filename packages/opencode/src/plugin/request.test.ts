@@ -1141,12 +1141,15 @@ describe('request.ts', () => {
 
       const wrapped = JSON.parse(result.init.body as string)
       expect(wrapped.requestId).toBe(
-        'agent/conversation-id/1784285195116/trajectory-id/5',
+        'agent/conversation-id/1784285195116/trajectory-id/3',
       )
       expect(wrapped.request.sessionId).toBe('-3750763034362895579')
       expect(wrapped.request.labels).toEqual({
-        last_step_index: '4',
+        cascade_id: 'conversation-id',
+        last_step_index: '2',
         model_enum: 'MODEL_PLACEHOLDER_M84',
+        request_id: 'trajectory-id-0',
+        root_cascade_id: 'conversation-id',
         trajectory_id: 'trajectory-id',
         used_claude: 'false',
         used_claude_conservative: 'false',
@@ -1266,7 +1269,7 @@ describe('request.ts', () => {
       expect(Object.keys(parsed.request)).toEqual(
         AGY_1_1_13_WIRE_FIXTURE.requestKeys,
       )
-      expect(parsed.requestId).toMatch(/^agent\/.+\/2$/)
+      expect(parsed.requestId).toMatch(/^agent\/.+\/1$/)
       expect(parsed.userAgent).toBe('antigravity')
       expect(parsed.requestType).toBe('agent')
     })
@@ -2526,13 +2529,13 @@ describe('request.ts', () => {
       const warmup = JSON.parse(buildThinkingWarmupBody(body, true)!)
 
       expect(warmup.requestId).toMatch(
-        /^agent\/[0-9a-f-]+\/\d+\/[0-9a-f-]+\/2$/,
+        /^agent\/[0-9a-f-]+\/\d+\/[0-9a-f-]+\/1$/,
       )
       expect(warmup.requestId).not.toContain('main-trajectory')
       expect(warmup.request.contents).toHaveLength(1)
       expect(warmup.request.tools).toBeUndefined()
       expect(warmup.request.toolConfig).toBeUndefined()
-      expect(warmup.request.labels.last_step_index).toBe('1')
+      expect(warmup.request.labels.last_step_index).toBe('0')
       expect(warmup.request.labels.model_enum).toBe('MODEL_PLACEHOLDER_M35')
       expect(warmup.request.labels.trajectory_id).not.toBe('main-trajectory')
       expect(warmup.request.sessionId).toBe('-3750763034362895579')
